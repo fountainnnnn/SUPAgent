@@ -5,6 +5,7 @@ import type {
   UploadedDoc,
   QuestionEvent,
 } from '@shared';
+import { apiUrl } from '../api';
 
 // ─── SSE line parser ──────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ export class CodexEngine implements FactoryEngine {
     // ── Initiate build session ────────────────────────────────────────────────
     let response: Response;
     try {
-      response = await fetch('/api/build', {
+      response = await fetch(apiUrl('/api/build'), {
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
         body: JSON.stringify({ docs }),
@@ -107,7 +108,7 @@ export class CodexEngine implements FactoryEngine {
 
         const answer = await onAnswer(event);
 
-        await fetch('/api/build/answer', {
+        await fetch(apiUrl('/api/build/answer'), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ sessionId, questionId: event.id, value: answer }),
@@ -124,7 +125,7 @@ export class CodexEngine implements FactoryEngine {
 
         const editedSpec = await onSpecEdit(event.spec);
 
-        await fetch('/api/build/spec', {
+        await fetch(apiUrl('/api/build/spec'), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ sessionId, spec: editedSpec }),

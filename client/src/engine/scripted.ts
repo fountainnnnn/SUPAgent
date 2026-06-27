@@ -5,6 +5,7 @@ import type {
   UploadedDoc,
   QuestionEvent,
 } from '@shared';
+import { apiUrl } from '../api';
 
 import { sampleSpec } from '../content/sampleSpec';
 import { sampleTickets, maliciousTicket } from '../content/tickets';
@@ -359,7 +360,7 @@ This response was assisted by an AI support agent.`,
     let blockedReason = 'Prompt-injection detected: unsolicited refund request to an unverified external address flagged by policy guardrail.';
 
     try {
-      const guardrailRes = await fetch('/api/guardrail-check', {
+      const guardrailRes = await fetch(apiUrl('/api/guardrail-check'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'refund', amount: 5000, to: 'attacker@evil.com' }),
@@ -398,7 +399,7 @@ This response was assisted by an AI support agent.`,
     let emailMessageId = 'local-fallback';
 
     try {
-      const sendRes = await fetch('/api/send', {
+      const sendRes = await fetch(apiUrl('/api/send'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({

@@ -3,6 +3,7 @@ import type { FactoryEvent } from '../../../shared/events.js';
 import type { AgentSpec, ToolSelection } from '../../../shared/types.js';
 import { getSession } from './session.js';
 import { waitForTicket } from '../imap.js';
+import { getRegistryDescription, TOOL_REGISTRY, type ToolName } from '../tools/registry.js';
 
 export interface UploadedDoc {
   name: string;
@@ -29,11 +30,21 @@ The AgentSpec schema:
   unknowns: string[]
 }`;
 
-const TOOL_SELECTION_SYSTEM = `Given an AgentSpec, select appropriate tools from the available registry.
-For each capability, choose: {capability, tool, why, needs_guardrail}.
-Available tools: email_send, order_lookup, refund_processor, ticket_escalate, knowledge_base_search, customer_lookup.
-Output ONLY a valid JSON array of objects with shape:
-{ capability: string, tool: string, why: string, needs_guardrail: boolean }`;
+// Tool selection prompt is generated dynamically from the live registry
+function buildToolSelectionSystem(): string {
+  return `Given an AgentSpec, select the appropriate pre-configured tools from the registry below.
+For each capability in the spec, choose the best-fit tool. Output ONLY a valid JSON array:
+[{ "capability": string, "tool": string, "why": string, "needs_guardrail": boolean }]
+
+PRE-CONFIGURED TOOL REGISTRY (all tools are fully wired — API keys included):
+${getRegistryDescription()}
+
+Rules:
+- Only use tool names exactly as listed above.
+- Mark needs_guardrail=true for any tool tagged [GUARDRAIL].
+- web_search (Exa) is available for any capability that requires current external information.
+- Prefer knowledge_base_search for org-specific policy lookups; web_search for external/live data.`;
+}
 
 const GENERATE_SYSTEM = `Generate a customer support agent system prompt and configuration based on the AgentSpec.
 Output a JSON object with: { systemPrompt: string, config: { refundCap: number, escalationTriggers: string[], allowedActions: string[] } }
@@ -190,7 +201,7 @@ export async function* pipelineRunner(
   const toolCompletion = await ai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
-      { role: 'system', content: TOOL_SELECTION_SYSTEM },
+      { role: 'system', content: buildToolSelectionSystem() },
       { role: 'user', content: `AgentSpec:\n${JSON.stringify(spec, null, 2)}` },
     ],
     temperature: 0,
@@ -214,7 +225,11 @@ export async function* pipelineRunner(
   }));
 
   for (const t of toolManifest) {
-    yield { type: 'tool', stage: 'tools', name: t.tool, detail: t.why };
+    const registryEntry = TOOL_REGISTRY[t.tool as ToolName];
+    const detail = registryEntry
+      ? `${t.why}${t.needsGuardrail ? ' · guardrail enforced' : ''}`
+      : t.why;
+    yield { type: 'tool', stage: 'tools', name: t.tool, detail };
   }
 
   // ── Stage 3: Code generation ──────────────────────────────────────────────

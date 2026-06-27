@@ -13,8 +13,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Backend (Express) for real email + guardrail checks.
+      // Dev only — in production set VITE_API_BASE to the backend service URL.
       '/api': 'http://localhost:8787',
     },
+  },
+  // Expose VITE_API_BASE so fetch calls can target the correct backend in production.
+  define: {
+    __API_BASE__: JSON.stringify(process.env.VITE_API_BASE ?? ''),
   },
 });
