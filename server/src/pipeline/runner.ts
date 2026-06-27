@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import type { FactoryEvent } from '../../../shared/events.js';
 import type { AgentSpec, ToolSelection } from '../../../shared/types.js';
 import { getSession } from './session.js';
+import { waitForTicket } from '../imap.js';
 
 export interface UploadedDoc {
   name: string;
@@ -330,19 +331,20 @@ export async function* pipelineRunner(
   };
 
   // ── Stage 7: Live run ─────────────────────────────────────────────────────
-  yield { type: 'step', stage: 'run', label: 'Generating demo ticket…' };
+  yield { type: 'step', stage: 'run', label: 'Preparing live run…' };
 
-  // Ask user for a demo ticket scenario
+  // Ask user for a demo ticket source
   yield {
     type: 'question',
     id: 'demo_ticket',
-    prompt: 'Choose a demo scenario for the live run:',
+    prompt: 'Choose a live-run scenario:',
     options: [
+      { label: 'Wait for real email from inbox', value: 'real_inbox' },
       { label: 'Refund request within policy', value: 'refund_ok' },
       { label: 'Refund request above limit (escalate)', value: 'refund_escalate' },
       { label: 'Order status inquiry', value: 'order_status' },
     ],
-    allowText: true,
+    allowText: false,
   };
 
   const demoChoice = await waitForAnswer(sessionId, 'demo_ticket');
@@ -365,7 +367,21 @@ export async function* pipelineRunner(
     },
   };
 
-  const ticket = ticketMap[demoChoice] ?? ticketMap['order_status']!;
+  let ticket: { from: string; subject: string; body: string };
+
+  if (demoChoice === 'real_inbox') {
+    yield { type: 'step', stage: 'run', label: 'Waiting for inbound email (up to 2 min)…' };
+    const inbound = await waitForTicket(120_000);
+    if (inbound) {
+      ticket = { from: inbound.from, subject: inbound.subject, body: inbound.body };
+    } else {
+      // Timed out — fall back to default scenario
+      yield { type: 'assistant', text: 'No email received within 2 minutes — using demo ticket instead.' };
+      ticket = ticketMap['order_status']!;
+    }
+  } else {
+    ticket = ticketMap[demoChoice] ?? ticketMap['order_status']!;
+  }
 
   yield { type: 'ticket', from: ticket.from, subject: ticket.subject, body: ticket.body };
 
