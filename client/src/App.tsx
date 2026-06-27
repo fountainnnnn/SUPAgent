@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { UploadedDoc } from '@shared';
 import { useStore } from './store';
@@ -38,6 +38,7 @@ export default function App() {
   const activeStage = useStore((s) => s.activeStage);
   const pending = useStore((s) => s.pending);
   const answers = useStore((s) => s.answers);
+  const runGeneration = useStore((s) => s.runGeneration);
 
   const setDocs = useStore((s) => s.setDocs);
   const setRunning = useStore((s) => s.setRunning);
@@ -46,6 +47,10 @@ export default function App() {
   const requestSpecEdit = useStore((s) => s.requestSpecEdit);
   const resolveAnswer = useStore((s) => s.resolveAnswer);
   const resolveSpecEdit = useStore((s) => s.resolveSpecEdit);
+  const reset = useStore((s) => s.reset);
+
+  // Tracks active run generation so the for-await loop exits on reset
+  const genRef = useRef(runGeneration);
 
   const start = useCallback(
     async (docs: UploadedDoc[]) => {
@@ -53,13 +58,16 @@ export default function App() {
       const names = docs.map((d) => d.name).join(', ');
       apply({ type: 'usermsg', text: `Uploaded ${docs.length} document${docs.length === 1 ? '' : 's'}: ${names}` });
       setRunning(true);
+      const myGen = useStore.getState().runGeneration;
+      genRef.current = myGen;
       const engine = getEngine(useStore.getState().mode);
       try {
         for await (const ev of engine.run(docs, requestAnswer, requestSpecEdit)) {
+          if (useStore.getState().runGeneration !== myGen) break;
           apply(ev);
         }
       } finally {
-        setRunning(false);
+        if (useStore.getState().runGeneration === myGen) setRunning(false);
       }
     },
     [setDocs, apply, setRunning, requestAnswer, requestSpecEdit],
@@ -68,6 +76,8 @@ export default function App() {
   const status = statusFor(phase, running);
   const showUpload = phase === 'upload' && events.length === 0;
   const pendingQuestionId = pending?.question?.event.id ?? null;
+  // Suppress unused-var warning — runGeneration is used to trigger re-render on reset
+  void runGeneration;
 
   return (
     <div className="relative min-h-full w-full overflow-x-hidden">
@@ -109,10 +119,17 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {/* Bottom composer — secondary to the streamed build. */}
       {!showUpload && (
         <div className="fixed inset-x-0 bottom-0 z-20">
           <div className="mx-auto w-full max-w-[1040px] px-5 pb-5">
+            <div className="mb-2 flex justify-end">
+              <button
+                onClick={reset}
+                className="rounded-lg border border-glass-hairline bg-glass px-3 py-1.5 text-xs font-medium text-ink-soft backdrop-blur-sm transition-colors hover:bg-white/80 hover:text-ink"
+              >
+                ↩ Start over
+              </button>
+            </div>
             <Composer
               onSend={() => undefined}
               disabled={running}

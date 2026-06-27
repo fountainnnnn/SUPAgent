@@ -12,8 +12,9 @@ import { sampleTickets, maliciousTicket } from '../content/tickets';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
+const DEMO_SPEED = 0.4; // 0.4× = snappy but still readable at hackathon pace
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms * DEMO_SPEED));
 }
 
 const DEFAULT_DOCS = [

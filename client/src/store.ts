@@ -50,6 +50,8 @@ export interface AppState {
   mode: Mode;
   phase: AppPhase;
   running: boolean;
+  /** Incremented on every reset so in-flight engine runs can detect stale state. */
+  runGeneration: number;
 
   docs: UploadedDoc[];
   spec: AgentSpec | null;
@@ -109,6 +111,7 @@ export const useStore = create<AppState>((set, get) => ({
   mode: 'demo',
   phase: 'upload',
   running: false,
+  runGeneration: 0,
 
   docs: [],
   spec: null,
@@ -127,9 +130,10 @@ export const useStore = create<AppState>((set, get) => ({
   setRunning: (r) => set({ running: r }),
 
   reset: () =>
-    set({
+    set((s) => ({
       phase: 'upload',
       running: false,
+      runGeneration: s.runGeneration + 1,
       docs: [],
       spec: null,
       events: [],
@@ -138,7 +142,7 @@ export const useStore = create<AppState>((set, get) => ({
       answers: {},
       deploy: null,
       email: null,
-    }),
+    })),
 
   apply: (e) =>
     set((s) => {
