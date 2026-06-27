@@ -131,24 +131,37 @@ export function DocUpload({ onUpload }: DocUploadProps) {
   const [preview, setPreview] = useState<{ name: string; title: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function mapFiles(files: FileList): UploadedDoc[] {
-    return Array.from(files).map((f) => ({
-      name: f.name,
-      sizeKb: Math.round(f.size / 1024),
-    }));
+  async function readFiles(files: FileList): Promise<UploadedDoc[]> {
+    const results: UploadedDoc[] = [];
+    for (const f of Array.from(files)) {
+      const content = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+          resolve(base64);
+        };
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(f);
+      });
+      results.push({ name: f.name, sizeKb: Math.round(f.size / 1024), content });
+    }
+    return results;
   }
 
   const handleDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
+    async (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       setDragOver(false);
       const files = e.dataTransfer.files;
       if (!files.length) return;
-      const docs = mapFiles(files);
-      setPending(docs);
-      onUpload(docs);
+      const docs = await readFiles(files);
+      setPending((prev) => {
+        const existingNames = new Set(prev.map((d) => d.name));
+        return [...prev, ...docs.filter((d) => !existingNames.has(d.name))];
+      });
     },
-    [onUpload],
+    [],
   );
 
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -161,21 +174,30 @@ export function DocUpload({ onUpload }: DocUploadProps) {
   }, []);
 
   const handleFileChange = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => {
+    async (e: ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files?.length) return;
-      const docs = mapFiles(files);
-      setPending(docs);
-      onUpload(docs);
-      // Reset input so the same file can be re-selected if needed
+      const docs = await readFiles(files);
+      setPending((prev) => {
+        const existingNames = new Set(prev.map((d) => d.name));
+        return [...prev, ...docs.filter((d) => !existingNames.has(d.name))];
+      });
       e.target.value = '';
     },
-    [onUpload],
+    [],
   );
+
+  function removePending(name: string) {
+    setPending((prev) => prev.filter((d) => d.name !== name));
+  }
 
   function handleUseSamples() {
     setPending(SAMPLE_DOCS);
-    onUpload(SAMPLE_DOCS);
+  }
+
+  function handleSubmit() {
+    if (pending.length === 0) return;
+    onUpload(pending);
   }
 
   const hasPending = pending.length > 0;
@@ -192,12 +214,29 @@ export function DocUpload({ onUpload }: DocUploadProps) {
         {/* Headline */}
         <div className="mb-6 text-center">
           <h2 className="text-xl font-semibold text-ink tracking-tight">
-            Upload your organization's documents
+            Build a support agent from your docs
           </h2>
-          <p className="mt-2 text-sm text-ink-soft leading-relaxed max-w-sm mx-auto">
-            Share your SOPs, policies, brand guide, and FAQ — the agent will
-            read them and configure itself to represent your organization.
+          <p className="mt-1.5 text-sm text-ink-soft leading-relaxed max-w-md mx-auto">
+            Upload your company's SOPs, policies, brand guide, and FAQ.
+            SUPAgent reads them and creates a customer-support agent that
+            knows your products, tone, and escalation rules.
           </p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-ink-faint">
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent/60" />
+              Upload docs
+            </span>
+            <span className="text-ink-faint/40">&rarr;</span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent/60" />
+              AI builds your agent
+            </span>
+            <span className="text-ink-faint/40">&rarr;</span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent/60" />
+              Review &amp; deploy
+            </span>
+          </div>
         </div>
 
         {/* Dropzone */}
@@ -263,7 +302,7 @@ export function DocUpload({ onUpload }: DocUploadProps) {
             className="mt-4 overflow-hidden"
           >
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-ink-faint">
-              Queued ({pending.length})
+              Ready to use ({pending.length})
             </p>
             <div className="flex flex-col gap-1.5">
               {pending.map((doc) => (
@@ -271,16 +310,31 @@ export function DocUpload({ onUpload }: DocUploadProps) {
                   key={doc.name}
                   className="flex items-center justify-between gap-2 rounded-xl bg-white/50 px-3 py-2 shadow-glass"
                 >
-                  <span className="text-sm text-ink truncate">{doc.name}</span>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileTypeBadge name={doc.name} />
+                    <span className="text-sm text-ink truncate">{doc.name}</span>
+                  </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {doc.sizeKb !== undefined && (
                       <span className="text-xs text-ink-faint">{doc.sizeKb} KB</span>
                     )}
-                    <FileTypeBadge name={doc.name} />
+                    <button
+                      type="button"
+                      onClick={() => removePending(doc.name)}
+                      aria-label={`Remove ${doc.name}`}
+                      className="rounded-md p-0.5 text-ink-faint transition hover:bg-black/5 hover:text-ink"
+                    >
+                      <svg viewBox="0 0 14 14" className="h-3.5 w-3.5" fill="none" aria-hidden>
+                        <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
+            <Button variant="primary" className="mt-3 w-full" onClick={handleSubmit}>
+              Use these documents
+            </Button>
           </motion.div>
         )}
 

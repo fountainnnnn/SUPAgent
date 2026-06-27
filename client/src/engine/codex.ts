@@ -121,8 +121,7 @@ export class CodexEngine implements FactoryEngine {
 
       // ── Interactive pause: spec ───────────────────────────────────────────
       if (event.type === 'spec') {
-        yield event;
-
+        // Don't yield here — onSpecEdit adds the spec event to the store
         const editedSpec = await onSpecEdit(event.spec);
 
         await fetch(apiUrl('/api/build/spec'), {

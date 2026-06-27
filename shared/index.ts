@@ -6,10 +6,12 @@ export * from './events';
 import type { FactoryEvent, QuestionEvent } from './events';
 import type { AgentSpec } from './types';
 
-/** A document the user uploaded to start a build. (Content is read in Real mode.) */
+/** A document the user uploaded to start a build. */
 export interface UploadedDoc {
   name: string;
   sizeKb?: number;
+  /** Base64-encoded file content (populated for Real mode uploads). */
+  content?: string;
 }
 
 /**

@@ -3,6 +3,8 @@ import { Codex } from '@openai/codex-sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+// @ts-expect-error pdf-parse has no types
+import pdfParse from 'pdf-parse';
 import type { FactoryEvent } from '../../../shared/events.js';
 import type { AgentSpec, ToolSelection } from '../../../shared/types.js';
 import { getSession } from './session.js';
@@ -11,7 +13,7 @@ import { getRegistryDescription, getToolSchemas, TOOL_REGISTRY, type ToolName } 
 
 export interface UploadedDoc {
   name: string;
-  content: string;
+  content?: string;
 }
 
 // ── Prompts ──────────────────────────────────────────────────────────────────
@@ -59,6 +61,28 @@ Output ONLY valid JSON:
 }`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function extractDocText(doc: UploadedDoc): Promise<string> {
+  const raw = doc.content ?? '';
+  if (!raw) return `[Empty document: ${doc.name}]`;
+
+  const isPdf = doc.name.toLowerCase().endsWith('.pdf');
+  const buf = Buffer.from(raw, 'base64');
+
+  if (isPdf) {
+    try {
+      const parsed = await pdfParse(buf);
+      const text = (parsed.text as string ?? '').trim();
+      if (text.length > 50) return text;
+    } catch { /* fall through */ }
+  }
+
+  // Try decoding as UTF-8 text
+  const decoded = buf.toString('utf8');
+  if (/^[\x20-\x7E\r\n\t]{50,}/.test(decoded.slice(0, 500))) return decoded;
+
+  return `[Could not extract text from ${doc.name}]`;
+}
 
 function parseJSON<T>(text: string): T {
   const clean = text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
@@ -300,19 +324,13 @@ export async function* pipelineRunner(
   // ── Stage 1: Intake → AgentSpec ──────────────────────────────────────────
   yield { type: 'step', stage: 'intake', label: 'Reading uploaded documents…' };
 
-  const docText = docs
-    .map((d) => {
-      let content = d.content;
-      try {
-        const buf = Buffer.from(d.content, 'base64');
-        const decoded = buf.toString('utf8');
-        if (/^[\x20-\x7E\r\n\t]+$/.test(decoded.slice(0, 200))) {
-          content = decoded;
-        }
-      } catch { /* keep original */ }
-      return `=== ${d.name} ===\n${content}`;
-    })
-    .join('\n\n');
+  const docTexts: string[] = [];
+  for (const d of docs) {
+    yield { type: 'tool', stage: 'intake', name: 'Parse', detail: d.name };
+    const text = await extractDocText(d);
+    docTexts.push(`=== ${d.name} ===\n${text}`);
+  }
+  const docText = docTexts.join('\n\n');
 
   yield { type: 'step', stage: 'intake', label: 'Analyzing documents with GPT-4o…' };
 
@@ -475,12 +493,14 @@ export async function* pipelineRunner(
   yield { type: 'step', stage: 'deploy', label: 'Deploying endpoint…' };
 
   const endpointId = Math.random().toString(36).slice(2, 10);
+  const agentRole = spec.role ?? 'Customer Support Agent';
   yield {
     type: 'artifact',
     kind: 'endpoint',
     data: {
       url: `https://agent-factory.example.com/agents/${endpointId}`,
       agentId: endpointId,
+      agentRole,
     },
   };
 
