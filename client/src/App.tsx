@@ -74,7 +74,7 @@ export default function App() {
       <AmbientBackground />
       <TopBar mode={mode} onModeChange={setMode} status={status.label} tone={status.tone} />
 
-      <main className="relative z-10 mx-auto w-full max-w-[760px] px-5 pb-36 pt-6">
+      <main className="relative z-10 mx-auto w-full max-w-[1040px] px-5 pb-36 pt-6">
         <AnimatePresence mode="wait">
           {showUpload ? (
             <motion.div
@@ -112,11 +112,11 @@ export default function App() {
       {/* Bottom composer — secondary to the streamed build. */}
       {!showUpload && (
         <div className="fixed inset-x-0 bottom-0 z-20">
-          <div className="mx-auto w-full max-w-[760px] px-5 pb-5">
+          <div className="mx-auto w-full max-w-[1040px] px-5 pb-5">
             <Composer
               onSend={() => undefined}
               disabled={running}
-              placeholder={running ? 'Agent factory is working…' : 'Ask the factory…'}
+              placeholder={running ? 'SUPAgent is working…' : 'Ask SUPAgent…'}
             />
           </div>
         </div>

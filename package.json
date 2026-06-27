@@ -2,7 +2,7 @@
   "name": "agent-factory",
   "private": true,
   "version": "0.1.0",
-  "description": "Agent Factory — guided intake to a deployed, owned support agent.",
+  "description": "SUPAgent — upload your documents, get a deployed, owned support agent.",
   "workspaces": [
     "client",
     "server"

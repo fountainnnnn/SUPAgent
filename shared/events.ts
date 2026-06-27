@@ -44,7 +44,7 @@ export interface RedTeamProbe {
 
 export type ArtifactKind = 'evals' | 'endpoint' | 'repo';
 
-/** An option for an inline follow-up question (Claude-desktop style). */
+/** An option for an inline follow-up question (conversational, inline prompt). */
 export interface QuestionOption {
   label: string;
   value: string;

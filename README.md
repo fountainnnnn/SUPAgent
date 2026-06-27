@@ -1,8 +1,8 @@
-# Agent Factory
+# SUPAgent
 
 Turn how a team already works into a deployed, owned support agent.
 
-Agent Factory takes an organization's real inputs — brand voice, knowledge, connected
+SUPAgent takes an organization's real inputs — brand voice, knowledge, connected
 systems, SOP, escalation rules, and compliance constraints — and builds a custom
 customer-support agent for them. It hosts the agent as a live API **and** hands over the
 owned code repository, so there's no platform lock-in.
@@ -22,7 +22,7 @@ One continuous chat:
    fictional coffee brand are in `demo-documents/`.)
 2. **Gap report + inline follow-ups** — what's covered, what's missing, and what the
    agent will escalate. Anything the documents don't cover is asked as an inline
-   follow-up question (Claude-desktop style) — never silently guessed.
+   follow-up question (inline, conversational) — never silently guessed.
 3. **Build stream** — the factory works out loud: verbose tool-call steps grouped by
    stage (Intake → Plan → Tools → Generate → Self-test).
 4. **Spec review** — the inferred agent spec, fully editable before generation.

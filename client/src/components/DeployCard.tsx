@@ -76,7 +76,11 @@ export function DeployCard({ url, repoUrl }: DeployCardProps) {
             Download repo
           </Button>
         )}
-        <Button variant="secondary" className="text-xs" onClick={() => window.open('#', '_blank')}>
+        <Button
+          variant="secondary"
+          className="text-xs"
+          onClick={() => window.open('/runbook/SUPAgent-Runbook.pdf', '_blank')}
+        >
           <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5" aria-hidden>
             <path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.3" />
             <path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
