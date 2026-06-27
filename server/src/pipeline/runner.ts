@@ -167,7 +167,7 @@ async function* runCodexGeneration(
 ): AsyncGenerator<FactoryEvent> {
   yield { type: 'step', stage: 'generate', label: 'Initializing Codex Agent SDK…' };
 
-  const buildDir = path.join(os.tmpdir(), `supagent-build-${Date.now()}`);
+  const buildDir = path.join(process.cwd(), '.build', `supagent-${Date.now()}`);
   fs.mkdirSync(path.join(buildDir, 'src', 'tools'), { recursive: true });
 
   const prompt = buildCodexPrompt(spec, toolManifest, toolSchemas);
@@ -368,11 +368,15 @@ export async function* pipelineRunner(
     };
   }
 
+  const filledFields = [spec.role, spec.tone, spec.policies?.length, spec.escalation?.length, spec.capabilities?.length]
+    .filter(Boolean).length;
+  const confidence = Math.min(98, 50 + filledFields * 10 - (spec.unknowns?.length ?? 0) * 5);
+
   yield {
     type: 'detect',
-    agentType: spec.role ?? 'Customer Support Agent',
-    org: docs[0]?.name?.split('/')[0]?.replace(/[-_]/g, ' ') ?? 'Unknown Org',
-    confidence: '87%',
+    agentType: spec.role ?? 'Agent',
+    org: docs[0]?.name?.split('-')[0]?.replace(/[_]/g, ' ') ?? 'Unknown Org',
+    confidence: `${confidence}%`,
   };
 
   const covered = spec.capabilities ?? [];
@@ -482,28 +486,34 @@ export async function* pipelineRunner(
     redteam: reviewResult.redteam ?? [],
   };
 
-  // ── Stage 6: Deploy ───────────────────────────────────────────────────────
+  // ── Stage 6: Deploy (to Zo Computer) ──────────────────────────────────────
   yield { type: 'step', stage: 'deploy', label: 'Packaging agent…' };
-  yield { type: 'step', stage: 'deploy', label: 'Deploying endpoint…' };
 
-  const endpointId = Math.random().toString(36).slice(2, 10);
   const agentRole = spec.role ?? 'Customer Support Agent';
+  const zoBase = 'https://support-agent-crystallizedcrust.zocomputer.io';
+  const agentId = `agent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+  yield { type: 'step', stage: 'deploy', label: 'Registering agent on Zo Computer…' };
+
+  try {
+    const regRes = await fetch(`${zoBase}/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: agentId, systemPrompt: `You are a ${spec.role}. Tone: ${spec.tone}. Policies: ${spec.policies.map(p => p.rule).join('; ')}`, spec }),
+    });
+    if (!regRes.ok) throw new Error(`Zo returned ${regRes.status}`);
+  } catch (err) {
+    yield { type: 'step', stage: 'deploy', label: `Agent registration warning: ${err instanceof Error ? err.message : err}` };
+  }
+
+  const deployUrl = `${zoBase}/agents/${agentId}/chat`;
   yield {
     type: 'artifact',
     kind: 'endpoint',
     data: {
-      url: `https://agent-factory.example.com/agents/${endpointId}`,
-      agentId: endpointId,
+      url: deployUrl,
+      agentId,
       agentRole,
-    },
-  };
-
-  yield {
-    type: 'artifact',
-    kind: 'repo',
-    data: {
-      url: `https://github.com/agent-factory/agent-${endpointId}`,
-      branch: 'main',
     },
   };
 
