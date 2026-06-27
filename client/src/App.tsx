@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { OrgIntake } from '@shared';
 import { useStore } from './store';
@@ -62,15 +62,26 @@ export default function App() {
     [setIntake, setRunning, apply, requestConfirm, requestSpecEdit],
   );
 
+  const specEditing = pending?.specEdit;
+  // Escape passes the spec through unchanged so the flow can never stall on this overlay.
+  useEffect(() => {
+    if (!specEditing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') resolveSpecEdit(specEditing.spec);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [specEditing, resolveSpecEdit]);
+
   const status = statusFor(phase, running);
   const showWizard = phase === 'intake' && !running && events.length === 0;
   const confirm = pending?.confirm;
-  const specEdit = pending?.specEdit;
+  const specEdit = specEditing;
 
   return (
     <div className="relative min-h-full w-full overflow-x-hidden">
       <AmbientBackground />
-      <TopBar mode={mode} onModeChange={setMode} status={status.label} />
+      <TopBar mode={mode} onModeChange={setMode} status={status.label} tone={status.tone} />
 
       <main className="relative z-10 mx-auto w-full max-w-[760px] px-5 pb-32 pt-6">
         <AnimatePresence mode="wait">
@@ -91,7 +102,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3 }}
             >
-              <ChatStream events={events} activeStage={activeStage} />
+              <ChatStream events={events} activeStage={activeStage} paused={!!pending} />
             </motion.div>
           )}
         </AnimatePresence>

@@ -151,7 +151,16 @@ function FadeUp({ children }: { children: React.ReactNode }) {
 
 // ─── Single-event renderer ────────────────────────────────────────────────────
 
-function renderSingle(event: FactoryEvent, key: string | number): React.ReactNode {
+interface RenderCtx {
+  hasEmailSent: boolean;
+  lastReply?: Extract<FactoryEvent, { type: 'reply' }>;
+}
+
+function renderSingle(
+  event: FactoryEvent,
+  key: string | number,
+  ctx: RenderCtx,
+): React.ReactNode {
   switch (event.type) {
     case 'assistant':
       return (
@@ -198,6 +207,9 @@ function renderSingle(event: FactoryEvent, key: string | number): React.ReactNod
       );
 
     case 'reply':
+      // Once the send resolves we render a single "sent" card (below) instead,
+      // so skip the transient "sending" card to avoid a stuck duplicate.
+      if (ctx.hasEmailSent) return null;
       return (
         <FadeUp key={key}>
           <EmailCard
@@ -212,7 +224,13 @@ function renderSingle(event: FactoryEvent, key: string | number): React.ReactNod
     case 'email_sent':
       return (
         <FadeUp key={key}>
-          <EmailCard to={event.to} status="sent" messageId={event.messageId} />
+          <EmailCard
+            to={event.to}
+            subject={ctx.lastReply?.subject}
+            body={ctx.lastReply?.body}
+            status="sent"
+            messageId={event.messageId}
+          />
         </FadeUp>
       );
 
@@ -254,22 +272,29 @@ function renderSingle(event: FactoryEvent, key: string | number): React.ReactNod
 interface ChatStreamProps {
   events: FactoryEvent[];
   activeStage: Stage | null;
+  /** When an overlay (confirm / spec review) is open, pause auto-scroll so the page doesn't jump under the modal. */
+  paused?: boolean;
 }
 
-export function ChatStream({ events, activeStage }: ChatStreamProps) {
+export function ChatStream({ events, activeStage, paused = false }: ChatStreamProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (paused) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [events]);
+  }, [events, paused]);
 
   const streamItems = groupEvents(events);
+  const ctx: RenderCtx = {
+    hasEmailSent: events.some((e) => e.type === 'email_sent'),
+    lastReply: [...events].reverse().find((e): e is Extract<FactoryEvent, { type: 'reply' }> => e.type === 'reply'),
+  };
 
   return (
     <div className="flex flex-col gap-3 pb-4">
       {streamItems.map((item) => {
         if (item.kind === 'single') {
-          return renderSingle(item.event, item.index);
+          return renderSingle(item.event, item.index, ctx);
         }
 
         // Stage group

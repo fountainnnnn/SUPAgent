@@ -5,10 +5,12 @@ export function TopBar({
   mode,
   onModeChange,
   status,
+  tone = 'idle',
 }: {
   mode: 'demo' | 'real';
   onModeChange: (m: 'demo' | 'real') => void;
   status: string;
+  tone?: 'idle' | 'busy' | 'live';
 }) {
   return (
     <header className="sticky top-0 z-40 glass-strong border-b border-black/[0.06]">
@@ -20,7 +22,7 @@ export function TopBar({
 
         {/* Right controls */}
         <div className="flex items-center gap-3">
-          <StatusPill label={status} tone="idle" />
+          <StatusPill label={status} tone={tone} />
           <ModeToggle mode={mode} onModeChange={onModeChange} />
         </div>
       </div>
