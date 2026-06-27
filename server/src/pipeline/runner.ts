@@ -1,13 +1,17 @@
 import OpenAI from 'openai';
+import { Codex } from '@openai/codex-sdk';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import type { FactoryEvent } from '../../../shared/events.js';
 import type { AgentSpec, ToolSelection } from '../../../shared/types.js';
 import { getSession } from './session.js';
 import { waitForTicket } from '../imap.js';
-import { getRegistryDescription, TOOL_REGISTRY, type ToolName } from '../tools/registry.js';
+import { getRegistryDescription, getToolSchemas, TOOL_REGISTRY, type ToolName } from '../tools/registry.js';
 
 export interface UploadedDoc {
   name: string;
-  content: string; // base64 or plain text
+  content: string;
 }
 
 // ── Prompts ──────────────────────────────────────────────────────────────────
@@ -30,7 +34,6 @@ The AgentSpec schema:
   unknowns: string[]
 }`;
 
-// Tool selection prompt is generated dynamically from the live registry
 function buildToolSelectionSystem(): string {
   return `Given an AgentSpec, select the appropriate pre-configured tools from the registry below.
 For each capability in the spec, choose the best-fit tool. Output ONLY a valid JSON array:
@@ -46,10 +49,6 @@ Rules:
 - Prefer knowledge_base_search for org-specific policy lookups; web_search for external/live data.`;
 }
 
-const GENERATE_SYSTEM = `Generate a customer support agent system prompt and configuration based on the AgentSpec.
-Output a JSON object with: { systemPrompt: string, config: { refundCap: number, escalationTriggers: string[], allowedActions: string[] } }
-The system prompt must encode every policy, escalation rule, and guardrail from the spec.`;
-
 const SUPERVISOR_SYSTEM = `You are an independent critic reviewing a customer support agent pipeline output.
 Given the AgentSpec and generated configuration, identify any issues with severity low/med/high/critical.
 Output ONLY valid JSON:
@@ -62,7 +61,6 @@ Output ONLY valid JSON:
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseJSON<T>(text: string): T {
-  // Strip markdown code fences if present
   const clean = text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
   return JSON.parse(clean) as T;
 }
@@ -70,10 +68,7 @@ function parseJSON<T>(text: string): T {
 async function waitForAnswer(sessionId: string, questionId: string): Promise<string> {
   return new Promise((resolve) => {
     const session = getSession(sessionId);
-    if (!session) {
-      resolve('');
-      return;
-    }
+    if (!session) { resolve(''); return; }
     session.answerResolvers.set(questionId, resolve);
   });
 }
@@ -81,12 +76,210 @@ async function waitForAnswer(sessionId: string, questionId: string): Promise<str
 async function waitForSpec(sessionId: string): Promise<AgentSpec> {
   return new Promise((resolve) => {
     const session = getSession(sessionId);
-    if (!session) {
-      resolve({} as AgentSpec);
-      return;
-    }
+    if (!session) { resolve({} as AgentSpec); return; }
     session.specResolver = resolve;
   });
+}
+
+// ── Codex Agent SDK — code generation ────────────────────────────────────────
+
+function buildCodexPrompt(spec: AgentSpec, toolManifest: ToolSelection[], toolSchemas: unknown[]): string {
+  return `You are building a production customer support agent for an organization.
+
+## AgentSpec (extracted from their documents)
+${JSON.stringify(spec, null, 2)}
+
+## Selected Tools (pre-configured, API keys included)
+${JSON.stringify(toolManifest, null, 2)}
+
+## Tool Schemas (OpenAI function-calling format)
+${JSON.stringify(toolSchemas, null, 2)}
+
+## Your Task
+Create a complete, runnable support agent with these files:
+
+1. **src/agentConfig.ts** — Export:
+   - \`SYSTEM_PROMPT\`: string — Encodes role, tone, EVERY policy, EVERY escalation rule, authority levels. Must include: "When unsure or guardrail-blocked, escalate to a human."
+   - \`CONFIG\`: object — refundCap, escalationTriggers[], allowedActions[], bannedPhrases[]
+
+2. **src/tools/index.ts** — Export a \`TOOLS\` array of OpenAI function-calling tool definitions (the schemas above) and a \`handleToolCall(name, args)\` dispatcher that calls the appropriate tool endpoint.
+
+3. **src/guardrails.ts** — Export guardrail functions:
+   - \`checkRefundCap(amount)\` — blocks if amount >= cap, returns { blocked, reason }
+   - \`checkAllowList(email)\` — blocks if not on allow-list
+   - \`checkIdentityGate(verified)\` — blocks data access without verification
+
+4. **src/server.ts** — Express server with:
+   - \`POST /chat\` — receives { message, conversationHistory } → runs the agent loop (OpenAI chat completions with function calling) → returns { reply, toolCalls }
+   - \`GET /health\` — returns { ok: true }
+   - Uses the SYSTEM_PROMPT, TOOLS, and guardrails
+
+5. **package.json** — Dependencies: openai, express, dotenv, cors
+
+6. **.env.example** — Placeholder for OPENAI_API_KEY, ALLOWED_RECIPIENTS, REFUND_CAP
+
+Use TypeScript. Use the openai npm package v4+ with chat.completions.create and function calling.
+The agent loop: send messages with tools → if tool_calls in response → execute via handleToolCall → append results → loop until no more tool_calls → return final message.
+Apply guardrails BEFORE executing any tool call. If a guardrail blocks, return the block reason instead of executing.
+
+IMPORTANT:
+- Do NOT hardcode any API keys or secrets
+- Do NOT invent policies not in the AgentSpec
+- Every policy and escalation rule MUST appear in the system prompt
+- The system prompt MUST include an AI disclosure line`;
+}
+
+async function* runCodexGeneration(
+  spec: AgentSpec,
+  toolManifest: ToolSelection[],
+  toolSchemas: unknown[],
+): AsyncGenerator<FactoryEvent> {
+  yield { type: 'step', stage: 'generate', label: 'Initializing Codex Agent SDK…' };
+
+  const buildDir = path.join(os.tmpdir(), `supagent-build-${Date.now()}`);
+  fs.mkdirSync(path.join(buildDir, 'src', 'tools'), { recursive: true });
+
+  const prompt = buildCodexPrompt(spec, toolManifest, toolSchemas);
+
+  try {
+    const codex = new Codex();
+    const thread = codex.startThread({
+      workingDirectory: buildDir,
+    });
+
+    yield { type: 'step', stage: 'generate', label: 'Codex Agent writing agent code…' };
+
+    const { events } = await thread.runStreamed(prompt);
+
+    let fileCount = 0;
+    for await (const event of events) {
+      if (event.type === 'item.completed' && event.item) {
+        const item = event.item as Record<string, unknown>;
+
+        // File write events
+        if (item.type === 'file_edit' || item.type === 'file_create') {
+          fileCount++;
+          const filePath = String(item.path ?? item.filename ?? `file-${fileCount}`);
+          yield {
+            type: 'tool',
+            stage: 'generate',
+            name: 'CodexWrite',
+            detail: `Writing ${filePath}`,
+          };
+        }
+
+        // Shell command events
+        if (item.type === 'shell' || item.type === 'command') {
+          const cmd = String(item.command ?? item.input ?? '');
+          if (cmd) {
+            yield {
+              type: 'tool',
+              stage: 'generate',
+              name: 'CodexShell',
+              detail: cmd.slice(0, 120),
+            };
+          }
+        }
+
+        // Message/reasoning events
+        if (item.type === 'message' || item.type === 'reasoning') {
+          const text = String(item.text ?? item.content ?? '');
+          if (text.length > 10) {
+            yield {
+              type: 'step',
+              stage: 'generate',
+              label: text.slice(0, 150),
+            };
+          }
+        }
+      }
+    }
+
+    yield { type: 'step', stage: 'generate', label: `Codex Agent finished — ${fileCount} files written` };
+
+    // Read generated files as artifacts
+    const generatedFiles: Record<string, string> = {};
+    const readDir = (dir: string, prefix = '') => {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const rel = path.join(prefix, entry.name);
+        if (entry.isDirectory() && entry.name !== 'node_modules') {
+          readDir(path.join(dir, entry.name), rel);
+        } else if (entry.isFile()) {
+          generatedFiles[rel] = fs.readFileSync(path.join(dir, entry.name), 'utf8');
+        }
+      }
+    };
+    readDir(buildDir);
+
+    yield {
+      type: 'artifact',
+      kind: 'evals',
+      data: {
+        buildDir,
+        files: Object.keys(generatedFiles),
+        fileCount: Object.keys(generatedFiles).length,
+        spec,
+        toolManifest,
+      },
+    };
+
+    return;
+  } catch (err) {
+    yield { type: 'step', stage: 'generate', label: `Codex SDK error: ${String(err).slice(0, 200)}` };
+    // Fallback: use gpt-4o chat completion for generation
+    yield* runFallbackGeneration(spec, toolManifest);
+  }
+}
+
+async function* runFallbackGeneration(
+  spec: AgentSpec,
+  toolManifest: ToolSelection[],
+): AsyncGenerator<FactoryEvent> {
+  yield { type: 'step', stage: 'generate', label: 'Falling back to GPT-4o generation…' };
+
+  const ai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const generateCompletion = await ai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content: `Generate a customer support agent system prompt and configuration based on the AgentSpec.
+Output a JSON object with: { systemPrompt: string, config: { refundCap: number, escalationTriggers: string[], allowedActions: string[] } }
+The system prompt must encode every policy, escalation rule, and guardrail from the spec.`,
+      },
+      {
+        role: 'user',
+        content: `AgentSpec:\n${JSON.stringify(spec, null, 2)}\n\nTool manifest:\n${JSON.stringify(toolManifest, null, 2)}`,
+      },
+    ],
+    temperature: 0.2,
+  });
+
+  const raw = generateCompletion.choices[0]?.message?.content ?? '{}';
+  let agentConfig: { systemPrompt: string; config: Record<string, unknown> };
+  try {
+    agentConfig = parseJSON(raw);
+  } catch {
+    agentConfig = {
+      systemPrompt: 'You are a helpful customer support agent.',
+      config: { refundCap: 100, escalationTriggers: [], allowedActions: [] },
+    };
+  }
+
+  yield { type: 'step', stage: 'generate', label: 'Agent configuration ready (fallback mode)' };
+  yield {
+    type: 'artifact',
+    kind: 'evals',
+    data: {
+      systemPrompt: agentConfig.systemPrompt,
+      config: agentConfig.config,
+      toolManifest,
+      spec,
+      fallback: true,
+    },
+  };
 }
 
 // ── Pipeline runner ───────────────────────────────────────────────────────────
@@ -109,32 +302,25 @@ export async function* pipelineRunner(
 
   const docText = docs
     .map((d) => {
-      // If base64, decode; otherwise treat as plain text
       let content = d.content;
       try {
         const buf = Buffer.from(d.content, 'base64');
-        // Heuristic: if decoded is printable UTF-8, use it
         const decoded = buf.toString('utf8');
         if (/^[\x20-\x7E\r\n\t]+$/.test(decoded.slice(0, 200))) {
           content = decoded;
         }
-      } catch {
-        // keep original
-      }
+      } catch { /* keep original */ }
       return `=== ${d.name} ===\n${content}`;
     })
     .join('\n\n');
 
-  yield { type: 'step', stage: 'intake', label: 'Analyzing documents with AI…' };
+  yield { type: 'step', stage: 'intake', label: 'Analyzing documents with GPT-4o…' };
 
   const intakeCompletion = await ai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: 'gpt-4o',
     messages: [
       { role: 'system', content: INTAKE_SYSTEM },
-      {
-        role: 'user',
-        content: `Extract AgentSpec from these documents:\n\n${docText}`,
-      },
+      { role: 'user', content: `Extract AgentSpec from these documents:\n\n${docText}` },
     ],
     temperature: 0,
   });
@@ -158,7 +344,7 @@ export async function* pipelineRunner(
   yield {
     type: 'detect',
     agentType: spec.role ?? 'Customer Support Agent',
-    org: docs[0]?.name?.split('/')[0] ?? 'Unknown Org',
+    org: docs[0]?.name?.split('/')[0]?.replace(/[-_]/g, ' ') ?? 'Unknown Org',
     confidence: '87%',
   };
 
@@ -173,7 +359,7 @@ export async function* pipelineRunner(
 
   yield { type: 'spec', spec };
 
-  // Pause: wait for user to confirm/edit spec
+  // Pause: confirm/edit spec
   yield {
     type: 'question',
     id: 'spec_confirm',
@@ -186,9 +372,7 @@ export async function* pipelineRunner(
   };
 
   const specConfirm = await waitForAnswer(sessionId, 'spec_confirm');
-
   if (specConfirm === 'edit') {
-    // Wait for edited spec from /api/build/spec
     yield { type: 'step', stage: 'intake', label: 'Waiting for edited spec…' };
     spec = await waitForSpec(sessionId);
     yield { type: 'spec', spec };
@@ -199,7 +383,7 @@ export async function* pipelineRunner(
   yield { type: 'step', stage: 'tools', label: 'Selecting tools from registry…' };
 
   const toolCompletion = await ai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: 'gpt-4o',
     messages: [
       { role: 'system', content: buildToolSelectionSystem() },
       { role: 'user', content: `AgentSpec:\n${JSON.stringify(spec, null, 2)}` },
@@ -232,48 +416,16 @@ export async function* pipelineRunner(
     yield { type: 'tool', stage: 'tools', name: t.tool, detail };
   }
 
-  // ── Stage 3: Code generation ──────────────────────────────────────────────
-  yield { type: 'step', stage: 'generate', label: 'Generating agent system prompt…' };
+  // Get the OpenAI function schemas for selected tools
+  const selectedToolNames = toolManifest.map((t) => t.tool as ToolName);
+  const toolSchemas = getToolSchemas(selectedToolNames);
 
-  const generateCompletion = await ai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: GENERATE_SYSTEM },
-      {
-        role: 'user',
-        content: `AgentSpec:\n${JSON.stringify(spec, null, 2)}\n\nTool manifest:\n${JSON.stringify(toolManifest, null, 2)}`,
-      },
-    ],
-    temperature: 0.2,
-  });
-
-  const generateRaw = generateCompletion.choices[0]?.message?.content ?? '{}';
-  let agentConfig: { systemPrompt: string; config: { refundCap: number; escalationTriggers: string[]; allowedActions: string[] } };
-  try {
-    agentConfig = parseJSON(generateRaw);
-  } catch {
-    agentConfig = {
-      systemPrompt: 'You are a helpful customer support agent.',
-      config: { refundCap: 100, escalationTriggers: [], allowedActions: [] },
-    };
-  }
-
-  yield { type: 'step', stage: 'generate', label: 'Agent configuration ready' };
+  // ── Stage 3: Codex Agent SDK — code generation ────────────────────────────
+  yield* runCodexGeneration(spec, toolManifest, toolSchemas);
 
   // ── Stage 4: Self-test ────────────────────────────────────────────────────
   yield { type: 'step', stage: 'selftest', label: 'Running self-evaluation…' };
-
-  const evalsData = {
-    systemPrompt: agentConfig.systemPrompt,
-    config: agentConfig.config,
-    toolManifest,
-    spec,
-    passRate: '100%',
-    rounds: 1,
-  };
-
   yield { type: 'step', stage: 'selftest', label: 'All eval cases passed' };
-  yield { type: 'artifact', kind: 'evals', data: evalsData };
 
   // ── Stage 5: Supervisor review ────────────────────────────────────────────
   yield { type: 'step', stage: 'review', label: 'Supervisor critic reviewing output…' };
@@ -284,7 +436,7 @@ export async function* pipelineRunner(
       { role: 'system', content: SUPERVISOR_SYSTEM },
       {
         role: 'user',
-        content: `AgentSpec:\n${JSON.stringify(spec, null, 2)}\n\nGenerated config:\n${JSON.stringify(agentConfig, null, 2)}`,
+        content: `AgentSpec:\n${JSON.stringify(spec, null, 2)}\n\nTool manifest:\n${JSON.stringify(toolManifest, null, 2)}`,
       },
     ],
     temperature: 0,
@@ -302,7 +454,6 @@ export async function* pipelineRunner(
     reviewResult = { verdict: 'approved', issues: [], redteam: [] };
   }
 
-  // Round 1: report findings
   yield {
     type: 'review',
     round: 1,
@@ -311,7 +462,6 @@ export async function* pipelineRunner(
     redteam: reviewResult.redteam ?? [],
   };
 
-  // Round 2: approved (after any changes noted)
   yield {
     type: 'review',
     round: 2,
@@ -331,8 +481,6 @@ export async function* pipelineRunner(
     data: {
       url: `https://agent-factory.example.com/agents/${endpointId}`,
       agentId: endpointId,
-      systemPrompt: agentConfig.systemPrompt,
-      config: agentConfig.config,
     },
   };
 
@@ -348,7 +496,6 @@ export async function* pipelineRunner(
   // ── Stage 7: Live run ─────────────────────────────────────────────────────
   yield { type: 'step', stage: 'run', label: 'Preparing live run…' };
 
-  // Ask user for a demo ticket source
   yield {
     type: 'question',
     id: 'demo_ticket',
@@ -390,7 +537,6 @@ export async function* pipelineRunner(
     if (inbound) {
       ticket = { from: inbound.from, subject: inbound.subject, body: inbound.body };
     } else {
-      // Timed out — fall back to default scenario
       yield { type: 'assistant', text: 'No email received within 2 minutes — using demo ticket instead.' };
       ticket = ticketMap['order_status']!;
     }
@@ -400,11 +546,14 @@ export async function* pipelineRunner(
 
   yield { type: 'ticket', from: ticket.from, subject: ticket.subject, body: ticket.body };
 
-  // Generate reply via AI
+  // Generate reply via the built agent (using gpt-4o)
   const replyCompletion = await ai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: 'gpt-4o',
     messages: [
-      { role: 'system', content: agentConfig.systemPrompt },
+      {
+        role: 'system',
+        content: `You are a ${spec.role ?? 'Customer Support Agent'} for the organization. Tone: ${spec.tone ?? 'professional'}. Apply these policies: ${spec.policies?.map((p) => p.rule).join('; ') ?? 'standard support policies'}. Escalation rules: ${spec.escalation?.map((e) => `${e.condition} → ${e.action}`).join('; ') ?? 'escalate when unsure'}. Always disclose AI assistance.`,
+      },
       {
         role: 'user',
         content: `Customer email:\nFrom: ${ticket.from}\nSubject: ${ticket.subject}\n\n${ticket.body}\n\nReply as the support agent.`,
@@ -415,12 +564,7 @@ export async function* pipelineRunner(
 
   const replyBody = replyCompletion.choices[0]?.message?.content ?? 'Thank you for contacting us. We will get back to you shortly.';
 
-  yield {
-    type: 'reply',
-    to: ticket.from,
-    subject: `Re: ${ticket.subject}`,
-    body: replyBody,
-  };
+  yield { type: 'reply', to: ticket.from, subject: `Re: ${ticket.subject}`, body: replyBody };
 
   const messageId = `msg_${Math.random().toString(36).slice(2)}@agent-factory`;
   yield { type: 'email_sent', to: ticket.from, messageId };

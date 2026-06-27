@@ -9,6 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@openai/codex": "^0.142.3",
+    "@openai/codex-sdk": "^0.142.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "exa-js": "^2.15.0",
