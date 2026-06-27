@@ -10,7 +10,8 @@ npm-debug.log*
 .env.*.local
 server/.env
 
-# editor / os
+# local tooling / editor / os
+.claude/
 .DS_Store
 .idea/
 .vscode/
