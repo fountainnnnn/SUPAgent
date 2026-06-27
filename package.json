@@ -1,0 +1,20 @@
+{
+  "name": "agent-factory",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Agent Factory — guided intake to a deployed, owned support agent.",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n client,server -c blue,green \"npm:dev:client\" \"npm:dev:server\"",
+    "dev:client": "npm -w client run dev",
+    "dev:server": "npm -w server run dev",
+    "build": "npm -w client run build",
+    "typecheck": "tsc -p client/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

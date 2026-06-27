@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+
+# env / secrets — never commit real keys
+.env
+.env.local
+.env.*.local
+server/.env
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/
+*.tsbuildinfo
