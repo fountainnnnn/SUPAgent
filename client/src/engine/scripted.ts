@@ -12,7 +12,7 @@ import { sampleTickets, maliciousTicket } from '../content/tickets';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-const DEMO_SPEED = 1.0; // 1.0× = original curated pacing — realistic AI-work feel
+const DEMO_SPEED = 2.5; // 2.5× = deliberate pacing so judges can read each step
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms * DEMO_SPEED));
 }
