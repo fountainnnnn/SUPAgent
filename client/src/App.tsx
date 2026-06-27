@@ -1,24 +1,24 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { OrgIntake } from '@shared';
+import type { UploadedDoc } from '@shared';
 import { useStore } from './store';
 import { getEngine } from './engine';
-import { sampleOrg } from './content/sampleOrg';
 
 import { AmbientBackground } from './components/AmbientBackground';
 import { TopBar } from './components/TopBar';
-import { Wizard } from './components/Wizard';
+import { DocUpload } from './components/DocUpload';
 import { ChatStream } from './components/ChatStream';
-import { ConfirmModal } from './components/ConfirmModal';
-import { SpecReview } from './components/SpecReview';
 import { Composer } from './components/Composer';
 
-function statusFor(phase: string, running: boolean): { label: string; tone: 'idle' | 'busy' | 'live' } {
+function statusFor(
+  phase: string,
+  running: boolean,
+): { label: string; tone: 'idle' | 'busy' | 'live' } {
   if (phase === 'done') return { label: 'Live', tone: 'live' };
   if (running) {
     const map: Record<string, string> = {
-      gap: 'Reviewing inputs',
       building: 'Building agent',
+      gap: 'Reviewing inputs',
       spec_review: 'Awaiting spec review',
       review: 'Supervisor reviewing',
       sandbox: 'Testing',
@@ -26,7 +26,7 @@ function statusFor(phase: string, running: boolean): { label: string; tone: 'idl
     };
     return { label: map[phase] ?? 'Building agent', tone: 'busy' };
   }
-  return { label: 'Intake', tone: 'idle' };
+  return { label: 'Ready', tone: 'idle' };
 }
 
 export default function App() {
@@ -37,63 +37,55 @@ export default function App() {
   const events = useStore((s) => s.events);
   const activeStage = useStore((s) => s.activeStage);
   const pending = useStore((s) => s.pending);
+  const answers = useStore((s) => s.answers);
 
-  const setIntake = useStore((s) => s.setIntake);
+  const setDocs = useStore((s) => s.setDocs);
   const setRunning = useStore((s) => s.setRunning);
   const apply = useStore((s) => s.apply);
-  const requestConfirm = useStore((s) => s.requestConfirm);
+  const requestAnswer = useStore((s) => s.requestAnswer);
   const requestSpecEdit = useStore((s) => s.requestSpecEdit);
-  const resolveConfirm = useStore((s) => s.resolveConfirm);
+  const resolveAnswer = useStore((s) => s.resolveAnswer);
   const resolveSpecEdit = useStore((s) => s.resolveSpecEdit);
 
   const start = useCallback(
-    async (intake: OrgIntake) => {
-      setIntake(intake);
+    async (docs: UploadedDoc[]) => {
+      setDocs(docs);
+      const names = docs.map((d) => d.name).join(', ');
+      apply({ type: 'usermsg', text: `Uploaded ${docs.length} document${docs.length === 1 ? '' : 's'}: ${names}` });
       setRunning(true);
       const engine = getEngine(useStore.getState().mode);
       try {
-        for await (const ev of engine.run(intake, requestConfirm, requestSpecEdit)) {
+        for await (const ev of engine.run(docs, requestAnswer, requestSpecEdit)) {
           apply(ev);
         }
       } finally {
         setRunning(false);
       }
     },
-    [setIntake, setRunning, apply, requestConfirm, requestSpecEdit],
+    [setDocs, apply, setRunning, requestAnswer, requestSpecEdit],
   );
 
-  const specEditing = pending?.specEdit;
-  // Escape passes the spec through unchanged so the flow can never stall on this overlay.
-  useEffect(() => {
-    if (!specEditing) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') resolveSpecEdit(specEditing.spec);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [specEditing, resolveSpecEdit]);
-
   const status = statusFor(phase, running);
-  const showWizard = phase === 'intake' && !running && events.length === 0;
-  const confirm = pending?.confirm;
-  const specEdit = specEditing;
+  const showUpload = phase === 'upload' && events.length === 0;
+  const pendingQuestionId = pending?.question?.event.id ?? null;
 
   return (
     <div className="relative min-h-full w-full overflow-x-hidden">
       <AmbientBackground />
       <TopBar mode={mode} onModeChange={setMode} status={status.label} tone={status.tone} />
 
-      <main className="relative z-10 mx-auto w-full max-w-[760px] px-5 pb-32 pt-6">
+      <main className="relative z-10 mx-auto w-full max-w-[760px] px-5 pb-36 pt-6">
         <AnimatePresence mode="wait">
-          {showWizard ? (
+          {showUpload ? (
             <motion.div
-              key="wizard"
+              key="upload"
+              className="flex min-h-[70vh] items-center"
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.3 }}
             >
-              <Wizard initial={sampleOrg} onComplete={start} />
+              <DocUpload onUpload={start} />
             </motion.div>
           ) : (
             <motion.div
@@ -102,58 +94,33 @@ export default function App() {
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3 }}
             >
-              <ChatStream events={events} activeStage={activeStage} paused={!!pending} />
+              <ChatStream
+                events={events}
+                activeStage={activeStage}
+                paused={!!pending}
+                pendingQuestionId={pendingQuestionId}
+                answers={answers}
+                specPending={!!pending?.specEdit}
+                onAnswer={resolveAnswer}
+                onSpecConfirm={resolveSpecEdit}
+              />
             </motion.div>
           )}
         </AnimatePresence>
       </main>
 
       {/* Bottom composer — secondary to the streamed build. */}
-      {!showWizard && (
+      {!showUpload && (
         <div className="fixed inset-x-0 bottom-0 z-20">
           <div className="mx-auto w-full max-w-[760px] px-5 pb-5">
             <Composer
               onSend={() => undefined}
               disabled={running}
-              placeholder={running ? 'Agent is building…' : 'Ask the factory…'}
+              placeholder={running ? 'Agent factory is working…' : 'Ask the factory…'}
             />
           </div>
         </div>
       )}
-
-      {/* Editable spec-review overlay (engine awaits this). */}
-      <AnimatePresence>
-        {specEdit && (
-          <motion.div
-            key="spec-overlay"
-            className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/20 px-4 py-10 backdrop-blur-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="w-full max-w-[640px]"
-              initial={{ opacity: 0, scale: 0.97, y: 8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.97, y: 8 }}
-              transition={{ type: 'spring', stiffness: 360, damping: 30 }}
-            >
-              <SpecReview spec={specEdit.spec} onConfirm={resolveSpecEdit} />
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Blocking confirmation modal (engine awaits this). */}
-      <ConfirmModal
-        open={!!confirm}
-        title={confirm?.event.title ?? ''}
-        body={confirm?.event.body ?? ''}
-        confirmLabel="Confirm"
-        cancelLabel="Not now"
-        onConfirm={() => resolveConfirm(true)}
-        onCancel={() => resolveConfirm(false)}
-      />
     </div>
   );
 }

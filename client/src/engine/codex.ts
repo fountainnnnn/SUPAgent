@@ -1,9 +1,9 @@
 import type {
   FactoryEngine,
   FactoryEvent,
-  OrgIntake,
   AgentSpec,
-  ConfirmEvent,
+  UploadedDoc,
+  QuestionEvent,
 } from '@shared';
 
 /**
@@ -12,10 +12,9 @@ import type {
  * pipeline events. For now it yields a single explanatory message then done.
  */
 export class CodexEngine implements FactoryEngine {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async *run(
-    _intake: OrgIntake,
-    _onConfirm: (e: ConfirmEvent) => Promise<boolean>,
+    _docs: UploadedDoc[],
+    _onAnswer: (q: QuestionEvent) => Promise<string>,
     _onSpecEdit: (s: AgentSpec) => Promise<AgentSpec>,
   ): AsyncIterable<FactoryEvent> {
     yield {

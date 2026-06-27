@@ -1,13 +1,13 @@
 import type {
   FactoryEngine,
   FactoryEvent,
-  OrgIntake,
   AgentSpec,
-  ConfirmEvent,
+  UploadedDoc,
+  QuestionEvent,
 } from '@shared';
 
 import { sampleSpec } from '../content/sampleSpec';
-import { sampleTickets, maliciousTicket, orderStatusTicket } from '../content/tickets';
+import { sampleTickets, maliciousTicket } from '../content/tickets';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -15,190 +15,202 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const DEFAULT_DOCS = [
+  'Brewed-Roots-Support-SOP-v4.1.pdf',
+  'Brewed-Roots-Brand-and-Voice-Guide.pdf',
+  'Brewed-Roots-Policies.pdf',
+  'Brewed-Roots-Knowledge-Base-FAQ.pdf',
+];
+
 // ─── ScriptedEngine ───────────────────────────────────────────────────────────
 
 export class ScriptedEngine implements FactoryEngine {
   async *run(
-    intake: OrgIntake,
-    onConfirm: (e: ConfirmEvent) => Promise<boolean>,
+    docs: UploadedDoc[],
+    onAnswer: (q: QuestionEvent) => Promise<string>,
     onSpecEdit: (s: AgentSpec) => Promise<AgentSpec>,
   ): AsyncIterable<FactoryEvent> {
-    // ── 1. Opening assistant message ──────────────────────────────────────────
-    yield { type: 'assistant', text: `Reading ${intake.brand.name}'s SOP and sample tickets…` };
+    const docNames = docs.length > 0 ? docs.map((d) => d.name) : DEFAULT_DOCS;
+    const N = docNames.length;
+
+    // ── 1. Opening message ────────────────────────────────────────────────────
+    yield { type: 'assistant', text: `Thanks — reading your ${N} document${N === 1 ? '' : 's'} now.` };
     await sleep(400);
 
-    // ── 2. INTAKE stage ───────────────────────────────────────────────────────
-    yield { type: 'step', stage: 'intake', label: 'Parsing standard operating procedure' };
+    // ── 2. INTAKE stage — one tool per document ───────────────────────────────
+    for (const name of docNames) {
+      yield { type: 'tool', stage: 'intake', name: 'Parse', detail: name };
+      await sleep(300);
+    }
+
+    // ── 3. Detect ─────────────────────────────────────────────────────────────
+    yield { type: 'detect', agentType: 'Customer Support Agent', org: 'Brewed Roots Co.', confidence: 'High' };
     await sleep(350);
 
-    yield { type: 'tool', stage: 'intake', name: 'read_doc', detail: 'SOP v4.1 — 7 sections parsed' };
-    await sleep(300);
-
-    yield { type: 'tool', stage: 'intake', name: 'parse_tickets', detail: `${sampleTickets.length} sample tickets loaded` };
-    await sleep(350);
-
-    yield { type: 'step', stage: 'intake', label: 'Scanning knowledge base and policies' };
-    await sleep(300);
-
-    yield { type: 'tool', stage: 'intake', name: 'read_doc', detail: `${intake.knowledge.docs.length} docs indexed — ${intake.knowledge.policies.length} policies extracted` };
+    // ── 4. Brief assistant ────────────────────────────────────────────────────
+    yield { type: 'assistant', text: 'This is a customer-support operation. Inferring configuration from your documents…' };
     await sleep(400);
 
-    yield { type: 'step', stage: 'intake', label: 'Detecting coverage gaps' };
+    // ── 5. PLAN stage — infer role, extract policies, escalation, tone ────────
+    yield { type: 'step', stage: 'plan', label: 'Inferring agent role from SOP' };
+    await sleep(300);
+
+    yield { type: 'tool', stage: 'plan', name: 'InferRole', detail: 'Role: Customer Support Agent — email channel, D2C coffee brand' };
     await sleep(350);
 
-    // ── 3. Gap event ─────────────────────────────────────────────────────────
+    yield { type: 'step', stage: 'plan', label: 'Extracting policies' };
+    await sleep(300);
+
+    yield { type: 'tool', stage: 'plan', name: 'ExtractPolicies', detail: 'Identity verification · Refund <$100 auto / ≥$100 approval · 30-day return window · No delivery-date promises · AI disclosure' };
+    await sleep(400);
+
+    yield { type: 'step', stage: 'plan', label: 'Mapping escalation matrix' };
+    await sleep(300);
+
+    yield { type: 'tool', stage: 'plan', name: 'MapEscalation', detail: 'Refunds ≥$100 → Support Lead · Account deletion → Data Privacy · Legal/fraud → Legal & Compliance' };
+    await sleep(350);
+
+    yield { type: 'step', stage: 'plan', label: 'Deriving tone and banned phrases' };
+    await sleep(250);
+
+    yield { type: 'tool', stage: 'plan', name: 'DeriveTone', detail: 'Tone: warm, concise, helpful · Banned: "cheapest", "guaranteed delivery date"' };
+    await sleep(300);
+
+    // ── 6. Gap event ──────────────────────────────────────────────────────────
     yield {
       type: 'gap',
       covered: [
-        'Order status lookups',
-        'Refunds under $100 (auto-approve)',
-        'Subscription cancellation',
-        'Identity verification flow',
-        'AI disclosure on every reply',
+        'Identity verification',
+        'Refund thresholds',
+        '30-day return window',
+        'Escalation matrix',
+        'Tone & banned phrases',
+        'AI disclosure',
       ],
       missing: [
-        'Return shipping payer not specified in SOP',
-        'After-hours escalation path for urgent fraud or safety events',
+        'Return shipping payer not specified',
+        'After-hours on-call path for urgent fraud/safety',
       ],
       willEscalate: [
-        'Refunds ≥ $100 — routed to Support Lead',
-        'Account deletion — routed to Data Privacy team',
-        'Legal / regulatory inquiries — routed to Legal & Compliance',
-        'Suspected fraud or prompt-injection attempts',
+        'Refunds ≥ $100',
+        'Account deletion',
+        'Legal / fraud signals',
       ],
     };
     await sleep(500);
 
-    // ── 4. PLAN stage ─────────────────────────────────────────────────────────
-    yield { type: 'step', stage: 'plan', label: 'Inferring agent role and tone' };
-    await sleep(350);
-
-    yield { type: 'tool', stage: 'plan', name: 'infer_role', detail: `Role: Customer Support Agent • Tone: ${intake.brand.tone}` };
+    // ── 7. Gap question 1 — return shipping ───────────────────────────────────
+    const shipAns = await onAnswer({
+      type: 'question',
+      id: 'return_shipping',
+      prompt: "Your policies don't state who pays for return shipping. Which should the agent apply?",
+      options: [
+        { label: 'Customer pays', value: 'customer' },
+        { label: 'We cover it', value: 'brewed_roots' },
+        { label: 'Case-by-case', value: 'split' },
+      ],
+      allowText: true,
+    });
     await sleep(300);
 
-    yield { type: 'step', stage: 'plan', label: 'Mapping policies to authority levels' };
-    await sleep(350);
+    // ── 8. Gap question 2 — after-hours ───────────────────────────────────────
+    await onAnswer({
+      type: 'question',
+      id: 'after_hours',
+      prompt: "There's no after-hours on-call path for urgent fraud/safety. How should the agent handle these outside business hours?",
+      options: [
+        { label: 'Hold to next business day', value: 'hold' },
+        { label: 'Auto-escalate to Legal inbox', value: 'legal' },
+        { label: 'Page on-call', value: 'page' },
+      ],
+      allowText: true,
+    });
+    await sleep(300);
 
-    yield {
-      type: 'tool',
-      stage: 'plan',
-      name: 'map_authority',
-      detail: `${intake.process.authority.length} authority rows mapped — auto: ${intake.process.authority.filter(r => r.level === 'auto').length}, approval: ${intake.process.authority.filter(r => r.level === 'approval').length}, never: ${intake.process.authority.filter(r => r.level === 'never').length}`,
-    };
+    // ── 9. Fold answers in ────────────────────────────────────────────────────
+    yield { type: 'assistant', text: `Got it — folding those into the spec.` };
+    void shipAns; // acknowledged; value wired into spec narrative above
     await sleep(400);
 
-    yield { type: 'step', stage: 'plan', label: 'Drafting escalation matrix' };
-    await sleep(300);
-
-    yield {
-      type: 'tool',
-      stage: 'plan',
-      name: 'build_escalation_matrix',
-      detail: `${intake.process.escalationMatrix.length} escalation rules drafted`,
-    };
-    await sleep(350);
-
-    // ── 5. Spec review (blocking callback) ────────────────────────────────────
+    // ── 10. Spec review (blocking callback) ───────────────────────────────────
     const spec: AgentSpec = await onSpecEdit(sampleSpec);
     await sleep(300);
 
-    // ── 6. TOOLS stage ────────────────────────────────────────────────────────
-    yield { type: 'step', stage: 'tools', label: 'Selecting tools for agent capabilities' };
-    await sleep(300);
-
-    yield {
-      type: 'tool',
-      stage: 'tools',
-      name: 'select_tool',
-      detail: 'Gmail — read + send (matches: send_email_reply, escalate_to_human)',
-    };
+    // ── 11. TOOLS stage ───────────────────────────────────────────────────────
+    yield { type: 'tool', stage: 'tools', name: 'SelectTool', detail: 'Gmail — read + send (matches: send_email_reply, escalate_to_human)' };
     await sleep(350);
 
-    yield {
-      type: 'tool',
-      stage: 'tools',
-      name: 'select_tool',
-      detail: 'Exa search — knowledge-base lookup (matches: product FAQs, policy docs)',
-    };
+    yield { type: 'tool', stage: 'tools', name: 'SelectTool', detail: 'Exa — knowledge-base search (matches: product FAQs, policy docs)' };
     await sleep(300);
 
-    yield {
-      type: 'tool',
-      stage: 'tools',
-      name: 'select_tool',
-      detail: 'CRM lookup — customer record + order history (matches: look_up_order, identity verification)',
-    };
+    yield { type: 'tool', stage: 'tools', name: 'SelectTool', detail: 'Order DB — order lookup + status (matches: look_up_order)' };
+    await sleep(300);
+
+    yield { type: 'tool', stage: 'tools', name: 'SelectTool', detail: 'CRM — customer record + identity verification' };
     await sleep(350);
 
-    // ── 7. Confirm: email sending ─────────────────────────────────────────────
-    await onConfirm({
-      type: 'confirm',
+    // ── 12. Confirm: email sending ────────────────────────────────────────────
+    const c1 = await onAnswer({
+      type: 'question',
       id: 'send',
-      title: 'Email sending',
-      body: 'This agent will send email on your behalf. Restrict sending to allow-listed recipients only?',
+      prompt: 'This agent will send email on your behalf. Restrict sending to allow-listed recipients only?',
+      options: [
+        { label: 'Confirm', value: 'yes' },
+        { label: 'Not now', value: 'no' },
+      ],
     });
     await sleep(300);
 
-    // ── 8. GENERATE stage ─────────────────────────────────────────────────────
-    yield { type: 'step', stage: 'generate', label: 'Writing agent loop and system prompt' };
-    await sleep(450);
-
-    yield {
-      type: 'tool',
-      stage: 'generate',
-      name: 'write_system_prompt',
-      detail: `System prompt generated — role, tone, ${spec.policies.length} policies, ${spec.escalation.length} escalation rules`,
-    };
-    await sleep(350);
-
-    yield { type: 'step', stage: 'generate', label: 'Applying guardrails' };
-    await sleep(300);
-
-    yield {
-      type: 'tool',
-      stage: 'generate',
-      name: 'apply_guardrails',
-      detail: `${intake.constraints.neverDo.length} hard constraints injected — compliance: ${intake.constraints.compliance.join(', ')}`,
-    };
-    await sleep(350);
-
-    yield { type: 'step', stage: 'generate', label: 'Generating eval cases from SOP' };
-    await sleep(300);
-
-    yield {
-      type: 'tool',
-      stage: 'generate',
-      name: 'generate_evals',
-      detail: '3 eval cases generated covering normal flow, refund escalation, and prompt injection',
-    };
+    // ── 13. GENERATE stage ────────────────────────────────────────────────────
+    yield { type: 'step', stage: 'generate', label: 'Writing system prompt' };
     await sleep(400);
 
-    // ── 9. Confirm: refund policy ─────────────────────────────────────────────
-    await onConfirm({
-      type: 'confirm',
+    yield {
+      type: 'tool',
+      stage: 'generate',
+      name: 'WriteSystemPrompt',
+      detail: `System prompt generated — role, tone, ${spec.policies.length} policies, ${spec.escalation.length} escalation rules${c1 === 'yes' ? ', allow-list enforced' : ''}`,
+    };
+    await sleep(350);
+
+    yield { type: 'step', stage: 'generate', label: 'Wiring tools and guardrail config' };
+    await sleep(300);
+
+    yield { type: 'tool', stage: 'generate', name: 'WireTools', detail: `${spec.capabilities.length} capabilities wired — guardrails: refund threshold, allow-list, AI disclosure` };
+    await sleep(350);
+
+    yield { type: 'step', stage: 'generate', label: 'Generating eval cases' };
+    await sleep(300);
+
+    yield { type: 'tool', stage: 'generate', name: 'GenerateEvals', detail: `${sampleTickets.length} eval cases generated — normal flow, refund escalation, prompt-injection resistance` };
+    await sleep(400);
+
+    // ── 14. Confirm: refund policy ────────────────────────────────────────────
+    await onAnswer({
+      type: 'question',
       id: 'refund',
-      title: 'Refund policy',
-      body: 'SOP allows refunds under $100. Auto-handle under $100 and escalate above?',
+      prompt: 'Auto-handle refunds under $100 and escalate $100 or more?',
+      options: [
+        { label: 'Confirm', value: 'yes' },
+        { label: 'Not now', value: 'no' },
+      ],
     });
     await sleep(300);
 
-    // ── 10. SELF-TEST stage ───────────────────────────────────────────────────
-    yield { type: 'step', stage: 'selftest', label: 'Running deterministic eval suite' };
-    await sleep(350);
-
-    yield { type: 'tool', stage: 'selftest', name: 'run_eval', detail: 'running eval 1/3 — order status lookup' };
+    // ── 15. SELFTEST stage ────────────────────────────────────────────────────
+    yield { type: 'tool', stage: 'selftest', name: 'RunEval', detail: 'running eval 1/3 — order status lookup' };
     await sleep(500);
 
-    yield { type: 'tool', stage: 'selftest', name: 'run_eval', detail: 'running eval 2/3 — refund under $100' };
+    yield { type: 'tool', stage: 'selftest', name: 'RunEval', detail: 'running eval 2/3 — refund under $100' };
     await sleep(500);
 
-    yield { type: 'tool', stage: 'selftest', name: 'run_eval', detail: 'running eval 3/3 — identity verification gate' };
+    yield { type: 'tool', stage: 'selftest', name: 'RunEval', detail: 'running eval 3/3 — identity verification gate' };
     await sleep(500);
 
     yield { type: 'artifact', kind: 'evals', data: { passed: 3, total: 3 } };
     await sleep(400);
 
-    // ── 11. REVIEW stage — round 1 ────────────────────────────────────────────
+    // ── 16. REVIEW round 1 ────────────────────────────────────────────────────
     yield {
       type: 'review',
       round: 1,
@@ -214,7 +226,7 @@ export class ScriptedEngine implements FactoryEngine {
         {
           stage: 2,
           severity: 'med',
-          issue: 'Gmail send action allows arbitrary recipient addresses',
+          issue: 'Email send action allows arbitrary recipient addresses',
           evidence: 'tools/gmail.ts: no allow-list validation on the `to` field',
           fix: 'Add an allow-list guard that restricts outbound email to verified customer addresses from CRM lookup.',
         },
@@ -239,26 +251,16 @@ export class ScriptedEngine implements FactoryEngine {
     };
     await sleep(400);
 
-    yield {
-      type: 'tool',
-      stage: 'review',
-      name: 'route_fix',
-      detail: 'Routing refund threshold fix → Generate stage',
-    };
+    yield { type: 'tool', stage: 'review', name: 'RouteFix', detail: 'Routing refund threshold fix → Generate stage' };
     await sleep(350);
 
-    yield {
-      type: 'tool',
-      stage: 'review',
-      name: 'route_fix',
-      detail: 'Routing Gmail allow-list fix → Tools stage',
-    };
+    yield { type: 'tool', stage: 'review', name: 'RouteFix', detail: 'Routing email allow-list fix → Tools stage' };
     await sleep(350);
 
-    yield { type: 'tool', stage: 'review', name: 'run_eval', detail: 're-running eval suite after fixes' };
+    yield { type: 'tool', stage: 'review', name: 'RunEval', detail: 're-running eval suite after fixes' };
     await sleep(500);
 
-    // ── 11b. REVIEW stage — round 2 ───────────────────────────────────────────
+    // ── 16b. REVIEW round 2 ───────────────────────────────────────────────────
     yield {
       type: 'review',
       round: 2,
@@ -284,74 +286,76 @@ export class ScriptedEngine implements FactoryEngine {
     };
     await sleep(500);
 
-    // ── 12. Confirm: deploy ───────────────────────────────────────────────────
-    await onConfirm({
-      type: 'confirm',
+    // ── 17. Confirm: deploy ───────────────────────────────────────────────────
+    await onAnswer({
+      type: 'question',
       id: 'deploy',
-      title: 'Deploy agent',
-      body: 'Deploy this agent live?',
+      prompt: 'Deploy this agent live?',
+      options: [
+        { label: 'Confirm', value: 'yes' },
+        { label: 'Not now', value: 'no' },
+      ],
     });
     await sleep(300);
 
-    // ── 13. DEPLOY stage ──────────────────────────────────────────────────────
+    // ── 18. DEPLOY stage ──────────────────────────────────────────────────────
     yield { type: 'step', stage: 'deploy', label: 'Packaging agent for deployment' };
     await sleep(400);
 
-    yield { type: 'tool', stage: 'deploy', name: 'build_image', detail: 'Agent image built — 12 MB compressed' };
+    yield { type: 'tool', stage: 'deploy', name: 'BuildImage', detail: 'Agent image built — 12 MB compressed' };
     await sleep(350);
 
-    yield { type: 'tool', stage: 'deploy', name: 'push_image', detail: 'Image pushed to container registry' };
+    yield { type: 'tool', stage: 'deploy', name: 'PushImage', detail: 'Image pushed to container registry' };
     await sleep(300);
 
-    yield { type: 'tool', stage: 'deploy', name: 'provision_endpoint', detail: 'Endpoint provisioned at agentfactory.dev' };
+    yield { type: 'tool', stage: 'deploy', name: 'ProvisionEndpoint', detail: 'Endpoint provisioned at agentfactory.dev' };
     await sleep(400);
 
     yield {
       type: 'artifact',
       kind: 'endpoint',
-      data: { url: 'https://api.agentfactory.dev/acme/support' },
+      data: { url: 'https://api.agentfactory.dev/brewed-roots/support' },
     };
     await sleep(300);
 
-    yield { type: 'tool', stage: 'deploy', name: 'push_repo', detail: 'Source committed to GitHub repo' };
+    yield { type: 'tool', stage: 'deploy', name: 'PushRepo', detail: 'Source committed to GitHub repo' };
     await sleep(350);
 
     yield {
       type: 'artifact',
       kind: 'repo',
       data: {
-        repoUrl: 'https://github.com/acme/support-agent',
-        url: 'https://api.agentfactory.dev/acme/support',
+        repoUrl: 'https://github.com/brewed-roots/support-agent',
+        url: 'https://api.agentfactory.dev/brewed-roots/support',
       },
     };
     await sleep(400);
 
-    // ── 14. SANDBOX — normal ticket ───────────────────────────────────────────
+    // ── 19. SANDBOX — normal ticket ───────────────────────────────────────────
+    const normalTicket = sampleTickets[0];
     const normalReply = {
-      to: orderStatusTicket.from,
-      subject: `Re: ${orderStatusTicket.subject}`,
-      body: `Hi Maya,
+      to: normalTicket.from,
+      subject: `Re: ${normalTicket.subject}`,
+      body: `Hi,
 
-Thanks for reaching out! I've looked up order #BR-20481 and it's currently
-being prepared for dispatch — your shipping confirmation with a carrier tracking
-link will arrive within 1 business day.
+Thanks for reaching out! I've looked up your order and it's currently being prepared for dispatch — your shipping confirmation with a carrier tracking link will arrive within 1 business day.
 
-If you have any other questions in the meantime, feel free to reply to this
-email and we'll be happy to help.
+If you have any other questions in the meantime, feel free to reply and we'll be happy to help.
 
-${intake.brand.signature}
+The Brewed Roots Team
+hello@brewedrootsco.com | brewedrootsco.com
 
 This response was assisted by an AI support agent.`,
     };
 
     yield {
       type: 'sandbox',
-      ticket: orderStatusTicket,
+      ticket: normalTicket,
       reply: normalReply,
     };
     await sleep(500);
 
-    // ── 14b. SANDBOX — malicious ticket (guardrail check) ─────────────────────
+    // ── 19b. SANDBOX — malicious ticket (real guardrail check) ────────────────
     let blockedReason = 'Prompt-injection detected: unsolicited refund request to an unverified external address flagged by policy guardrail.';
 
     try {
@@ -373,27 +377,23 @@ This response was assisted by an AI support agent.`,
     };
     await sleep(500);
 
-    // ── 15. PAYOFF ────────────────────────────────────────────────────────────
-    const inboundTicket = orderStatusTicket;
-    const draftReply = normalReply;
-
+    // ── 20. PAYOFF — inbound ticket + drafted reply + real send ───────────────
     yield {
       type: 'ticket',
-      from: inboundTicket.from,
-      subject: inboundTicket.subject,
-      body: inboundTicket.body,
+      from: normalTicket.from,
+      subject: normalTicket.subject,
+      body: normalTicket.body,
     };
     await sleep(400);
 
     yield {
       type: 'reply',
-      to: draftReply.to,
-      subject: draftReply.subject,
-      body: draftReply.body,
+      to: normalReply.to,
+      subject: normalReply.subject,
+      body: normalReply.body,
     };
     await sleep(400);
 
-    // Send the real email (best-effort — demo continues on failure)
     let emailTo = '(demo inbox)';
     let emailMessageId = 'local-fallback';
 
@@ -402,8 +402,8 @@ This response was assisted by an AI support agent.`,
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          subject: draftReply.subject,
-          body: draftReply.body,
+          subject: normalReply.subject,
+          body: normalReply.body,
         }),
       });
       const sendData = (await sendRes.json()) as { messageId: string; to: string };
@@ -416,7 +416,7 @@ This response was assisted by an AI support agent.`,
     yield { type: 'email_sent', to: emailTo, messageId: emailMessageId };
     await sleep(350);
 
-    // ── 16. Done ──────────────────────────────────────────────────────────────
+    // ── 21. Done ──────────────────────────────────────────────────────────────
     yield { type: 'done' };
   }
 }

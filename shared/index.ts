@@ -3,8 +3,14 @@
 export * from './types';
 export * from './events';
 
-import type { FactoryEvent, ConfirmEvent } from './events';
-import type { OrgIntake, AgentSpec } from './types';
+import type { FactoryEvent, QuestionEvent } from './events';
+import type { AgentSpec } from './types';
+
+/** A document the user uploaded to start a build. (Content is read in Real mode.) */
+export interface UploadedDoc {
+  name: string;
+  sizeKb?: number;
+}
 
 /**
  * The single seam between UI and engine.
@@ -12,14 +18,18 @@ import type { OrgIntake, AgentSpec } from './types';
  * - Real mode: CodexEngine (subscribes to /api/build SSE).
  * The UI consumes the yielded events identically in both modes.
  *
+ * The flow is document-driven: the user uploads documents, the engine detects the
+ * agent type and infers configuration, asking inline follow-up questions as needed.
+ *
  * Interactive pauses are modeled as callbacks the engine awaits:
- *  - onConfirm  -> resolves true/false (the confirm modal)
- *  - onSpecEdit -> resolves the (possibly edited) AgentSpec (the spec-review step)
+ *  - onAnswer   -> resolves the chosen value of an inline question (confirms use
+ *                  options yes/no; gap-fills use the provided options or free text)
+ *  - onSpecEdit -> resolves the (possibly edited) AgentSpec (the inline spec review)
  */
 export interface FactoryEngine {
   run(
-    intake: OrgIntake,
-    onConfirm: (e: ConfirmEvent) => Promise<boolean>,
+    docs: UploadedDoc[],
+    onAnswer: (q: QuestionEvent) => Promise<string>,
     onSpecEdit: (s: AgentSpec) => Promise<AgentSpec>,
   ): AsyncIterable<FactoryEvent>;
 }

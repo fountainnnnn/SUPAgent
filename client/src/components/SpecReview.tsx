@@ -48,7 +48,15 @@ function InlineText({ value, onChange, className = '', multiline }: InlineTextPr
   );
 }
 
-export function SpecReview({ spec, onConfirm }: { spec: AgentSpec; onConfirm: (edited: AgentSpec) => void }) {
+export function SpecReview({
+  spec,
+  onConfirm,
+  confirmed = false,
+}: {
+  spec: AgentSpec;
+  onConfirm: (edited: AgentSpec) => void;
+  confirmed?: boolean;
+}) {
   const [edited, setEdited] = useState<AgentSpec>(() => ({
     ...spec,
     policies: spec.policies.map((p) => ({ ...p })),
@@ -88,7 +96,7 @@ export function SpecReview({ spec, onConfirm }: { spec: AgentSpec; onConfirm: (e
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={`flex flex-col gap-4 ${confirmed ? 'pointer-events-none' : ''}`}>
       {/* Role + Tone */}
       <GlassCard className="p-4">
         <div className="grid grid-cols-2 gap-4">
@@ -211,11 +219,20 @@ export function SpecReview({ spec, onConfirm }: { spec: AgentSpec; onConfirm: (e
         </GlassCard>
       )}
 
-      {/* Confirm button */}
+      {/* Confirm button / confirmed state */}
       <div className="flex justify-end">
-        <Button variant="primary" onClick={() => onConfirm(edited)}>
-          Looks right — generate
-        </Button>
+        {confirmed ? (
+          <span className="inline-flex items-center gap-1.5 rounded-xl bg-ok/10 px-3 py-1.5 text-sm font-medium text-ok">
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden>
+              <path d="M3.5 8.5l3 3 6-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Spec confirmed
+          </span>
+        ) : (
+          <Button variant="primary" onClick={() => onConfirm(edited)}>
+            Looks right — generate
+          </Button>
+        )}
       </div>
     </div>
   );

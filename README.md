@@ -14,13 +14,15 @@ independent supervisor that reviews and red-teams the result before anything shi
 
 ## What you see in the demo
 
-One continuous flow:
+One continuous chat:
 
-1. **Guided intake** — a wizard collects brand, knowledge (policies *with numbers*),
-   connected systems, the SOP + escalation matrix + an action-authority table, and
-   compliance/ops constraints.
-2. **Gap report** — what's covered, what's missing, and what the agent will escalate.
-   Nothing is silently guessed.
+1. **Upload documents** — the user drops in their real documents (SOP, brand guide,
+   policies, FAQ). The factory reads them, **detects the agent type**, and **infers**
+   the configuration — nothing is hand-configured in forms. (Sample documents for a
+   fictional coffee brand are in `demo-documents/`.)
+2. **Gap report + inline follow-ups** — what's covered, what's missing, and what the
+   agent will escalate. Anything the documents don't cover is asked as an inline
+   follow-up question (Claude-desktop style) — never silently guessed.
 3. **Build stream** — the factory works out loud: verbose tool-call steps grouped by
    stage (Intake → Plan → Tools → Generate → Self-test).
 4. **Spec review** — the inferred agent spec, fully editable before generation.
@@ -91,7 +93,7 @@ These are exercised live by the sandbox's malicious-ticket test.
 
 ```
 client/   Vite + React + TypeScript + Tailwind UI
-  src/components   presentational components (wizard, stream, cards, modals)
+  src/components   chat components (DocUpload, ChatStream, QuestionCard, SpecReview, cards)
   src/engine       ScriptedEngine (demo) + getEngine(mode)
   src/content      sample organization, tickets, inferred spec
   src/store.ts     state machine (the UI is a pure function of engine events)
@@ -100,6 +102,7 @@ server/   Express + TypeScript API
   src/guardrail.ts   code-level guardrail checks
   src/build.ts       real-mode pipeline endpoint
 shared/   Frozen TypeScript contracts shared by client and server
+demo-documents/   Sample PDFs to upload during the demo
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the engine seam and the build pipeline.

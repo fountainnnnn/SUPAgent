@@ -44,13 +44,27 @@ export interface RedTeamProbe {
 
 export type ArtifactKind = 'evals' | 'endpoint' | 'repo';
 
+/** An option for an inline follow-up question (Claude-desktop style). */
+export interface QuestionOption {
+  label: string;
+  value: string;
+}
+
 export type FactoryEvent =
   | { type: 'assistant'; text: string }
+  | { type: 'usermsg'; text: string }
   | { type: 'step'; stage: Stage; label: string }
   | { type: 'tool'; stage: Stage; name: string; detail: string }
+  | { type: 'detect'; agentType: string; org: string; confidence: string }
   | { type: 'gap'; covered: string[]; missing: string[]; willEscalate: string[] }
   | { type: 'spec'; spec: AgentSpec }
-  | { type: 'confirm'; id: string; title: string; body: string }
+  | {
+      type: 'question';
+      id: string;
+      prompt: string;
+      options: QuestionOption[];
+      allowText?: boolean;
+    }
   | { type: 'artifact'; kind: ArtifactKind; data: unknown }
   | {
       type: 'review';
@@ -68,6 +82,7 @@ export type FactoryEvent =
 export type FactoryEventType = FactoryEvent['type'];
 
 // Narrowing helpers for the interactive (blocking) events.
-export type ConfirmEvent = Extract<FactoryEvent, { type: 'confirm' }>;
+export type QuestionEvent = Extract<FactoryEvent, { type: 'question' }>;
 export type SpecEvent = Extract<FactoryEvent, { type: 'spec' }>;
 export type SandboxEvent = Extract<FactoryEvent, { type: 'sandbox' }>;
+export type ReplyEvent = Extract<FactoryEvent, { type: 'reply' }>;

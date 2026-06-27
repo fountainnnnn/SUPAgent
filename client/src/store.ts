@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import type {
   AgentSpec,
-  ConfirmEvent,
   FactoryEvent,
-  OrgIntake,
+  QuestionEvent,
   Reply,
   Stage,
+  UploadedDoc,
 } from '@shared';
 
 // The whole experience is a finite state machine driven by the engine's event
@@ -16,18 +16,18 @@ import type {
 export type Mode = 'demo' | 'real';
 
 export type AppPhase =
-  | 'intake'
-  | 'gap'
+  | 'upload'
   | 'building'
+  | 'gap'
   | 'spec_review'
   | 'review'
   | 'sandbox'
   | 'deploy'
   | 'done';
 
-export interface PendingConfirm {
-  event: ConfirmEvent;
-  resolve: (ok: boolean) => void;
+export interface PendingQuestion {
+  event: QuestionEvent;
+  resolve: (value: string) => void;
 }
 export interface PendingSpec {
   spec: AgentSpec;
@@ -51,20 +51,21 @@ export interface AppState {
   phase: AppPhase;
   running: boolean;
 
-  intake: OrgIntake | null;
+  docs: UploadedDoc[];
   spec: AgentSpec | null;
 
   events: FactoryEvent[];
   activeStage: Stage | null;
 
-  pending: { confirm?: PendingConfirm; specEdit?: PendingSpec } | null;
+  pending: { question?: PendingQuestion; specEdit?: PendingSpec } | null;
+  answers: Record<string, string>;
 
   deploy: DeployInfo | null;
   email: EmailInfo | null;
 
   // ---- setters / lifecycle ----
   setMode: (m: Mode) => void;
-  setIntake: (i: OrgIntake) => void;
+  setDocs: (d: UploadedDoc[]) => void;
   setRunning: (r: boolean) => void;
   reset: () => void;
 
@@ -72,11 +73,11 @@ export interface AppState {
   apply: (e: FactoryEvent) => void;
 
   // ---- interactive callbacks passed to engine.run(...) ----
-  requestConfirm: (e: ConfirmEvent) => Promise<boolean>;
+  requestAnswer: (q: QuestionEvent) => Promise<string>;
   requestSpecEdit: (s: AgentSpec) => Promise<AgentSpec>;
 
   // ---- UI -> store (resolve a pending interaction) ----
-  resolveConfirm: (ok: boolean) => void;
+  resolveAnswer: (value: string) => void;
   resolveSpecEdit: (s: AgentSpec) => void;
 }
 
@@ -84,11 +85,13 @@ const BUILD_STAGES: Stage[] = ['intake', 'plan', 'tools', 'generate', 'selftest'
 
 function phaseForEvent(e: FactoryEvent, prev: AppPhase): AppPhase {
   switch (e.type) {
+    case 'detect':
+      return 'building';
     case 'gap':
       return 'gap';
     case 'step':
     case 'tool':
-      return BUILD_STAGES.includes((e as { stage: Stage }).stage) ? 'building' : prev;
+      return BUILD_STAGES.includes(e.stage) ? 'building' : prev;
     case 'review':
       return 'review';
     case 'sandbox':
@@ -104,32 +107,35 @@ function phaseForEvent(e: FactoryEvent, prev: AppPhase): AppPhase {
 
 export const useStore = create<AppState>((set, get) => ({
   mode: 'demo',
-  phase: 'intake',
+  phase: 'upload',
   running: false,
 
-  intake: null,
+  docs: [],
   spec: null,
 
   events: [],
   activeStage: null,
 
   pending: null,
+  answers: {},
 
   deploy: null,
   email: null,
 
   setMode: (m) => set({ mode: m }),
-  setIntake: (i) => set({ intake: i }),
+  setDocs: (d) => set({ docs: d }),
   setRunning: (r) => set({ running: r }),
 
   reset: () =>
     set({
-      phase: 'intake',
+      phase: 'upload',
       running: false,
+      docs: [],
       spec: null,
       events: [],
       activeStage: null,
       pending: null,
+      answers: {},
       deploy: null,
       email: null,
     }),
@@ -153,16 +159,21 @@ export const useStore = create<AppState>((set, get) => ({
         next.email = { to: r.to, subject: r.subject, body: r.body, status: 'sending' };
       }
       if (e.type === 'email_sent') {
-        next.email = { ...(s.email ?? { to: e.to, status: 'sending' }), to: e.to, messageId: e.messageId, status: 'sent' };
+        next.email = {
+          ...(s.email ?? { to: e.to, status: 'sending' }),
+          to: e.to,
+          messageId: e.messageId,
+          status: 'sent',
+        };
       }
       return next;
     }),
 
-  requestConfirm: (event) =>
-    new Promise<boolean>((resolve) => {
+  requestAnswer: (event) =>
+    new Promise<string>((resolve) => {
       set((s) => ({
         events: [...s.events, event],
-        pending: { ...(s.pending ?? {}), confirm: { event, resolve } },
+        pending: { ...(s.pending ?? {}), question: { event, resolve } },
       }));
     }),
 
@@ -176,11 +187,14 @@ export const useStore = create<AppState>((set, get) => ({
       }));
     }),
 
-  resolveConfirm: (ok) => {
-    const p = get().pending?.confirm;
+  resolveAnswer: (value) => {
+    const p = get().pending?.question;
     if (!p) return;
-    p.resolve(ok);
-    set((s) => ({ pending: s.pending ? { ...s.pending, confirm: undefined } : null }));
+    p.resolve(value);
+    set((s) => ({
+      answers: { ...s.answers, [p.event.id]: value },
+      pending: s.pending ? { ...s.pending, question: undefined } : null,
+    }));
   },
 
   resolveSpecEdit: (edited) => {
