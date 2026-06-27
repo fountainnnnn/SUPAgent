@@ -338,45 +338,49 @@ export function DocUpload({ onUpload }: DocUploadProps) {
           </motion.div>
         )}
 
-        {/* Divider */}
-        <div className="my-5 flex items-center gap-3">
-          <div className="flex-1 h-px bg-black/8" />
-          <span className="text-xs text-ink-faint">or</span>
-          <div className="flex-1 h-px bg-black/8" />
-        </div>
+        {/* Divider — hide when user already has files queued */}
+        {!hasPending && (
+          <>
+            <div className="my-5 flex items-center gap-3">
+              <div className="flex-1 h-px bg-black/8" />
+              <span className="text-xs text-ink-faint">or try a demo</span>
+              <div className="flex-1 h-px bg-black/8" />
+            </div>
 
-        {/* Sample documents — previewable */}
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">
-              Sample documents
-            </span>
-            <span className="text-xs text-ink-faint">a fictional coffee brand</span>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            {SAMPLE_DOC_META.map((d) => (
-              <div
-                key={d.name}
-                className="flex items-center justify-between gap-2 rounded-xl bg-white/50 px-3 py-2 shadow-glass"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <FileTypeBadge name={d.name} />
-                  <span className="truncate text-sm text-ink">{d.title}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPreview(d)}
-                  className="shrink-0 rounded px-1 text-xs font-medium text-accent transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-                >
-                  Preview
-                </button>
+            {/* Sample documents — previewable */}
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">
+                  Sample documents
+                </span>
+                <span className="text-xs text-ink-faint">a fictional coffee brand</span>
               </div>
-            ))}
-          </div>
-          <Button variant="primary" className="mt-3 w-full" onClick={handleUseSamples}>
-            Use these sample documents
-          </Button>
-        </div>
+              <div className="flex flex-col gap-1.5">
+                {SAMPLE_DOC_META.map((d) => (
+                  <div
+                    key={d.name}
+                    className="flex items-center justify-between gap-2 rounded-xl bg-white/50 px-3 py-2 shadow-glass"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileTypeBadge name={d.name} />
+                      <span className="truncate text-sm text-ink">{d.title}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPreview(d)}
+                      className="shrink-0 rounded px-1 text-xs font-medium text-accent transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                    >
+                      Preview
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <Button variant="secondary" className="mt-3 w-full" onClick={handleUseSamples}>
+                Load sample documents
+              </Button>
+            </div>
+          </>
+        )}
       </GlassCard>
     </motion.div>
     <PdfPreviewModal doc={preview} onClose={() => setPreview(null)} />

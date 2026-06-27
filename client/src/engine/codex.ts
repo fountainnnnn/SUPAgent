@@ -104,8 +104,7 @@ export class CodexEngine implements FactoryEngine {
 
       // ── Interactive pause: question ───────────────────────────────────────
       if (event.type === 'question') {
-        yield event;
-
+        // Don't yield here — onAnswer adds the question event to the store
         const answer = await onAnswer(event);
 
         await fetch(apiUrl('/api/build/answer'), {

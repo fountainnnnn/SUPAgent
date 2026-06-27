@@ -23,17 +23,19 @@ interface InlineTextProps {
   onChange: (v: string) => void;
   className?: string;
   multiline?: boolean;
+  placeholder?: string;
 }
 
-function InlineText({ value, onChange, className = '', multiline }: InlineTextProps) {
+function InlineText({ value, onChange, className = '', multiline, placeholder }: InlineTextProps) {
   const base =
-    'w-full rounded-lg border border-transparent bg-transparent px-0 py-0.5 text-sm text-ink outline-none transition hover:bg-black/[0.03] focus:border-accent/30 focus:bg-white/60 focus:shadow-glass';
+    'w-full rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-ink outline-none transition hover:bg-black/[0.03] focus:border-accent/30 focus:bg-white/60 focus:shadow-glass placeholder:text-ink-faint/50';
   if (multiline) {
     return (
       <textarea
         className={`${base} resize-none leading-relaxed ${className}`}
         value={value}
         rows={2}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
       />
     );
@@ -43,6 +45,7 @@ function InlineText({ value, onChange, className = '', multiline }: InlineTextPr
       type="text"
       className={`${base} ${className}`}
       value={value}
+      placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
     />
   );
@@ -105,6 +108,7 @@ export function SpecReview({
             <InlineText
               value={edited.role}
               onChange={(v) => updateField('role', v)}
+              placeholder="e.g. Customer Support Agent"
             />
           </div>
           <div>
@@ -112,6 +116,7 @@ export function SpecReview({
             <InlineText
               value={edited.tone}
               onChange={(v) => updateField('tone', v)}
+              placeholder="e.g. Warm, professional, concise"
             />
           </div>
         </div>
@@ -128,12 +133,14 @@ export function SpecReview({
                   value={policy.name}
                   onChange={(v) => updatePolicy(i, { name: v })}
                   className="font-semibold"
+                  placeholder="Policy name"
                 />
                 <InlineText
                   value={policy.rule}
                   onChange={(v) => updatePolicy(i, { rule: v })}
                   multiline
                   className="mt-1 text-ink-soft"
+                  placeholder="Describe the policy rule…"
                 />
                 {policy.source && (
                   <p className="mt-1 font-mono text-[11px] text-ink-faint truncate">
@@ -159,6 +166,7 @@ export function SpecReview({
                     <InlineText
                       value={esc.condition}
                       onChange={(v) => updateEscalation(i, { condition: v })}
+                      placeholder="e.g. Refund amount exceeds limit"
                     />
                   </div>
                   <div>
@@ -166,6 +174,7 @@ export function SpecReview({
                     <InlineText
                       value={esc.threshold}
                       onChange={(v) => updateEscalation(i, { threshold: v })}
+                      placeholder="e.g. $100"
                     />
                   </div>
                 </div>
@@ -174,6 +183,7 @@ export function SpecReview({
                   <InlineText
                     value={esc.action}
                     onChange={(v) => updateEscalation(i, { action: v })}
+                    placeholder="e.g. Escalate to Support Lead"
                   />
                 </div>
               </div>
@@ -193,6 +203,7 @@ export function SpecReview({
                   value={auth.action}
                   onChange={(v) => updateAuthority(i, { action: v })}
                   className="flex-1"
+                  placeholder="e.g. Process refund"
                 />
                 <SegmentedControl<AuthorityLevel>
                   options={AUTHORITY_OPTIONS}

@@ -3,8 +3,9 @@ import { Codex } from '@openai/codex-sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-// @ts-expect-error pdf-parse has no types
-import pdfParse from 'pdf-parse';
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+const pdfParse: (buf: Buffer) => Promise<{ text: string }> = _require('pdf-parse');
 import type { FactoryEvent } from '../../../shared/events.js';
 import type { AgentSpec, ToolSelection } from '../../../shared/types.js';
 import { getSession } from './session.js';
@@ -71,10 +72,16 @@ async function extractDocText(doc: UploadedDoc): Promise<string> {
 
   if (isPdf) {
     try {
-      const parsed = await pdfParse(buf);
+      const parsed = await Promise.race([
+        pdfParse(buf),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('PDF parse timeout')), 10000)),
+      ]);
       const text = (parsed.text as string ?? '').trim();
+      console.log(`[pdf] ${doc.name}: extracted ${text.length} chars`);
       if (text.length > 50) return text;
-    } catch { /* fall through */ }
+    } catch (err) {
+      console.error(`[pdf] ${doc.name} parse error:`, (err as Error).message);
+    }
   }
 
   // Try decoding as UTF-8 text
@@ -331,6 +338,7 @@ export async function* pipelineRunner(
     docTexts.push(`=== ${d.name} ===\n${text}`);
   }
   const docText = docTexts.join('\n\n');
+  console.log(`[intake] docText length: ${docText.length} chars, first 300: ${docText.slice(0, 300)}`);
 
   yield { type: 'step', stage: 'intake', label: 'Analyzing documents with GPT-4o…' };
 
@@ -344,6 +352,7 @@ export async function* pipelineRunner(
   });
 
   const intakeRaw = intakeCompletion.choices[0]?.message?.content ?? '{}';
+  console.log(`[intake] GPT-4o response (first 500): ${intakeRaw.slice(0, 500)}`);
   let spec: AgentSpec;
   try {
     spec = parseJSON<AgentSpec>(intakeRaw);
@@ -377,24 +386,9 @@ export async function* pipelineRunner(
 
   yield { type: 'spec', spec };
 
-  // Pause: confirm/edit spec
-  yield {
-    type: 'question',
-    id: 'spec_confirm',
-    prompt: 'Review the extracted spec above. Does it look correct?',
-    options: [
-      { label: 'Looks good, continue', value: 'ok' },
-      { label: "I'll edit it first", value: 'edit' },
-    ],
-    allowText: false,
-  };
-
-  const specConfirm = await waitForAnswer(sessionId, 'spec_confirm');
-  if (specConfirm === 'edit') {
-    yield { type: 'step', stage: 'intake', label: 'Waiting for edited spec…' };
-    spec = await waitForSpec(sessionId);
-    yield { type: 'spec', spec };
-  }
+  // Pause: the client-side onSpecEdit callback handles the review UI
+  yield { type: 'step', stage: 'intake', label: 'Waiting for spec review…' };
+  spec = await waitForSpec(sessionId);
 
   // ── Stage 2: Tool selection ───────────────────────────────────────────────
   yield { type: 'step', stage: 'plan', label: 'Planning tool requirements…' };

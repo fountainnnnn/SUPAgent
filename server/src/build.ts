@@ -12,6 +12,7 @@ const router = express.Router();
 // Returns: SSE stream of FactoryEvent JSON lines; X-Session-Id header
 router.post('/', (req: Request, res: Response): void => {
   const docs: UploadedDoc[] = Array.isArray(req.body?.docs) ? req.body.docs : [];
+  console.log(`[build] ${docs.length} docs received:`, docs.map(d => `${d.name} (${d.content ? d.content.length : 0} chars)`));
 
   const session = createSession();
 
