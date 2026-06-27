@@ -57,15 +57,21 @@ router.post('/', async (req, res): Promise<void> => {
     return;
   }
 
+  // SMTP config — defaults to Proton Bridge local ports; override via env for other providers
+  const smtpHost = process.env.EMAIL_SMTP_HOST ?? '127.0.0.1';
+  const smtpPort = Number(process.env.EMAIL_SMTP_PORT ?? 1025);
+  const smtpSecure = process.env.EMAIL_SMTP_SECURE === 'true';
+
   try {
     const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
       auth: {
         user: gmailUser,
         pass: gmailPassword,
       },
+      tls: { rejectUnauthorized: false }, // Bridge uses self-signed cert on localhost
     });
 
     const info = await transporter.sendMail({

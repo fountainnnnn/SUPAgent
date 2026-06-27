@@ -17,7 +17,9 @@ let latestTicket: InboundEmail | null = null;
 
 function getConfig() {
   return {
-    host: process.env.EMAIL_IMAP_HOST ?? 'imap.gmail.com',
+    host: process.env.EMAIL_IMAP_HOST ?? '127.0.0.1',
+    port: Number(process.env.EMAIL_IMAP_PORT ?? 1143),
+    secure: process.env.EMAIL_IMAP_SECURE === 'true',
     user: process.env.EMAIL_IMAP_USER ?? '',
     pass: process.env.EMAIL_IMAP_PASSWORD ?? '',
     pollSeconds: Number(process.env.EMAIL_POLL_SECONDS ?? 20),
@@ -25,15 +27,16 @@ function getConfig() {
 }
 
 async function fetchUnseen(): Promise<InboundEmail[]> {
-  const { host, user, pass } = getConfig();
+  const { host, port, secure, user, pass } = getConfig();
   if (!user || !pass) return [];
 
   const client = new ImapFlow({
     host,
-    port: 993,
-    secure: true,
+    port,
+    secure,
     auth: { user, pass },
     logger: false,
+    tls: { rejectUnauthorized: false }, // Bridge uses self-signed cert on localhost
   });
 
   const found: InboundEmail[] = [];
