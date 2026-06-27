@@ -1,5 +1,6 @@
 import { ModeToggle } from './ModeToggle';
 import { StatusPill } from './StatusPill';
+import { Logo } from './Logo';
 
 export function TopBar({
   mode,
@@ -14,11 +15,8 @@ export function TopBar({
 }) {
   return (
     <header className="sticky top-0 z-40 glass-strong border-b border-black/[0.06]">
-      <div className="mx-auto flex h-12 max-w-[1040px] items-center justify-between px-5">
-        {/* Product name */}
-        <span className="text-sm font-semibold tracking-tight text-ink">
-          SUPAgent
-        </span>
+      <div className="mx-auto flex h-14 max-w-[1040px] items-center justify-between px-5">
+        <Logo />
 
         {/* Right controls */}
         <div className="flex items-center gap-3">

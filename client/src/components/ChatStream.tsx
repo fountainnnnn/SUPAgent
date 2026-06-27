@@ -32,9 +32,10 @@ const STAGE_HUMAN: Record<Stage, string> = {
 
 function UserBubble({ text }: { text: string }) {
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[72%] rounded-2xl rounded-tr-sm bg-accent px-4 py-3 shadow-glass">
-        <p className="text-sm leading-relaxed text-white whitespace-pre-wrap">{text}</p>
+    <div className="flex flex-col items-end gap-1">
+      <span className="px-1 text-[11px] font-medium text-ink-faint">You</span>
+      <div className="max-w-[80%] rounded-2xl rounded-tr-md bg-accent px-4 py-3 shadow-glass">
+        <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-white">{text}</p>
       </div>
     </div>
   );
@@ -435,28 +436,29 @@ export function ChatStream({
   };
 
   return (
-    <div className="flex flex-col gap-3 pb-4">
-      {streamItems.map((item) => {
+    <div className="flex flex-col gap-4 pb-4">
+      {streamItems.map((item, idx) => {
+        const isLast = idx === streamItems.length - 1;
+
         if (item.kind === 'single') {
           return renderSingle(item.event, item.index, ctx);
         }
 
-        // Stage group — consecutive step/tool events for the same stage
+        // Stage group — consecutive step/tool events for the same stage.
+        // "Streaming" (open + spinner) only while it's the last item in the stream;
+        // once anything appears after it (next stage, a follow-up, etc.) it collapses.
         const { stage, items, startIndex } = item;
         const isActive = stage === activeStage;
+        const streaming = isLast;
 
         const rows = items.map((rowEvent, rowIdx): React.ReactNode => {
-          let status: StepStatus;
-          if (!isActive) {
-            status = 'done';
-          } else {
-            status = rowIdx === items.length - 1 ? 'active' : 'done';
-          }
+          const status: StepStatus =
+            streaming && rowIdx === items.length - 1 ? 'active' : 'done';
 
           if (rowEvent.type === 'tool') {
             return (
               <ToolCallRow
-                key={startIndex + rowIdx}
+                key={`${startIndex}-${rowIdx}`}
                 stage={rowEvent.stage}
                 name={rowEvent.name}
                 detail={rowEvent.detail}
@@ -467,7 +469,7 @@ export function ChatStream({
           // step event
           return (
             <ToolCallRow
-              key={startIndex + rowIdx}
+              key={`${startIndex}-${rowIdx}`}
               stage={rowEvent.stage}
               name={rowEvent.label}
               detail=""
@@ -478,7 +480,13 @@ export function ChatStream({
 
         return (
           <FadeUp key={startIndex}>
-            <StageGroup stage={stage} title={STAGE_HUMAN[stage]} active={isActive}>
+            <StageGroup
+              stage={stage}
+              title={STAGE_HUMAN[stage]}
+              active={isActive || streaming}
+              defaultOpen={streaming}
+              count={items.length}
+            >
               {rows}
             </StageGroup>
           </FadeUp>
