@@ -6,23 +6,26 @@ export default {
   theme: {
     extend: {
       colors: {
-        // surface / background
-        canvas: '#F5F5F7', // Apple off-white
+        // surface / background — Sup brand warm canvas
+        canvas: '#f8f6f0',
         ink: {
-          DEFAULT: '#1D1D1F', // primary text
-          soft: '#6E6E73', // secondary text
-          faint: '#8E8E93',
+          DEFAULT: '#150B26', // deep purple-black primary text
+          soft: '#6B6378',    // secondary text
+          faint: '#A69FB3',   // tertiary / labels
         },
         accent: {
-          DEFAULT: '#0A84FF', // single restrained system blue
-          soft: '#3D9BFF',
-          ghost: 'rgba(10,132,255,0.10)',
+          DEFAULT: '#A855F7', // Sup purple (editorial-accent)
+          soft: '#C084FC',    // lighter purple (editorial-accent-bright)
+          ghost: 'rgba(168,85,247,0.10)',
+        },
+        violet: {
+          surface: '#EADCFB', // light violet card tint
+          subtle: '#F4EAFF',  // very light violet bg tint
         },
         glass: {
-          // white panels at ~65% opacity over the canvas
           DEFAULT: 'rgba(255,255,255,0.65)',
-          strong: 'rgba(255,255,255,0.80)',
-          hairline: 'rgba(255,255,255,0.40)',
+          strong: 'rgba(255,255,255,0.82)',
+          hairline: 'rgba(168,85,247,0.12)', // subtle purple hairline
         },
         ok: '#34C759',
         warn: '#FF9F0A',
@@ -34,9 +37,9 @@ export default {
         '3xl': '26px',
       },
       boxShadow: {
-        glass: '0 8px 40px rgba(17,17,26,0.06), 0 2px 8px rgba(17,17,26,0.04)',
-        'glass-lg': '0 24px 80px rgba(17,17,26,0.10), 0 6px 18px rgba(17,17,26,0.05)',
-        hairline: 'inset 0 0 0 1px rgba(255,255,255,0.40)',
+        glass: '0 8px 40px rgba(80,20,120,0.07), 0 2px 8px rgba(80,20,120,0.04)',
+        'glass-lg': '0 24px 80px rgba(80,20,120,0.11), 0 6px 18px rgba(80,20,120,0.06)',
+        hairline: 'inset 0 0 0 1px rgba(168,85,247,0.15)',
       },
       backdropBlur: {
         glass: '20px',

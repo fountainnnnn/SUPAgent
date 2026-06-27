@@ -1,4 +1,4 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -22,7 +22,7 @@ body {
 }
 
 @layer components {
-  /* Reusable glass surface — the core visual primitive. */
+  /* Reusable glass surface â€” the core visual primitive. */
   .glass {
     background-color: theme('colors.glass.DEFAULT');
     backdrop-filter: blur(20px) saturate(150%);
