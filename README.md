@@ -1,5 +1,7 @@
 # SUPAgent
 
+> Built in 12 hours at the ['Sup Build2026 Hackathon](https://luma.com/zda76sc1) in Singapore.
+
 Turn how a team already works into a deployed, owned support agent.
 
 SUPAgent takes an organization's real inputs — brand voice, knowledge, connected
@@ -19,7 +21,8 @@ One continuous chat:
 1. **Upload documents** — the user drops in their real documents (SOP, brand guide,
    policies, FAQ). The factory reads them, **detects the agent type**, and **infers**
    the configuration — nothing is hand-configured in forms. (Sample documents for a
-   fictional coffee brand are in `demo-documents/`.)
+   fictional companies are in `demo-documents/`: Brewed Roots (a coffee brand), FitPulse
+   (fitness) and NovaTalent (recruitment).)
 2. **Gap report + inline follow-ups** — what's covered, what's missing, and what the
    agent will escalate. Anything the documents don't cover is asked as an inline
    follow-up question (inline, conversational) — never silently guessed.
