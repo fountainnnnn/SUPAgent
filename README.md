@@ -20,7 +20,7 @@ One continuous chat:
 
 1. **Upload documents** — the user drops in their real documents (SOP, brand guide,
    policies, FAQ). The factory reads them, **detects the agent type**, and **infers**
-   the configuration — nothing is hand-configured in forms. (Sample documents for a
+   the configuration — nothing is hand-configured in forms. (Sample documents for three
    fictional companies are in `demo-documents/`: Brewed Roots (a coffee brand), FitPulse
    (fitness) and NovaTalent (recruitment).)
 2. **Gap report + inline follow-ups** — what's covered, what's missing, and what the
